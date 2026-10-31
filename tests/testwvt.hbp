@@ -1,0 +1,7 @@
+-I../include
+../chartclass.hbc
+-gtwvt
+-w3
+-es2
+
+testwvt.prg
