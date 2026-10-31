@@ -1,0 +1,15 @@
+#
+# chartclass
+#
+
+-stop{!allwin}
+-hblib
+-olib/chartclass
+-hbx=lib/chartclass.hbx
+
+-Iinclude
+-w3
+-es2
+
+source/ze_chartclass.prg
+source/ze_chartengine.c

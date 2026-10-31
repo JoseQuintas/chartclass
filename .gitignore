@@ -1,0 +1,15 @@
+# build
+lib/*.a
+lib/*.lib
+.hbmk/
+*.o
+*.obj
+*.exe
+*.log
+*.ppo
+
+# test output
+tests/*.png
+tests/*.jpg
+tests/*.bmp
+tests/*.rmc

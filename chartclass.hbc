@@ -1,0 +1,4 @@
+incpaths=include
+libpaths=lib
+{!hblib}libs=chartclass
+{allwin}syslibs=user32 gdi32

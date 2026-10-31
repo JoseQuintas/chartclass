@@ -1,0 +1,6 @@
+-I../include
+../chartclass.hbc
+-w3
+-es2
+
+testpng.prg

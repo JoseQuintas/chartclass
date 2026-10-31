@@ -1,0 +1,24 @@
+# sources in Windows-1252 (stored as is, without conversion), CR/LF
+* text=auto eol=crlf
+
+*.prg text eol=crlf
+*.ch  text eol=crlf
+*.c   text eol=crlf
+*.h   text eol=crlf
+*.hbp text eol=crlf
+*.hbc text eol=crlf
+*.hbx text eol=crlf
+*.md  text eol=crlf
+*.txt text eol=crlf
+
+*.png binary
+*.jpg binary
+*.bmp binary
+*.gif binary
+*.ico binary
+*.a   binary
+*.lib binary
+*.dll binary
+*.exe binary
+*.zip binary
+*.rmc binary
