@@ -24,11 +24,11 @@ Phase 1, work in progress.
 | Grid, bicolor, gradient, data axis (1 or 2), label axis | done |
 | Legend (top, bottom, left, right, floating, on value labels) | done |
 | Antialiasing, text measured with `GdipMeasureString` | done |
-| Bar series: single, grouped, stacked, stacked 100%, horizontal, flat/gradient/3D/cylinder styles | done |
+| Bar series: single, grouped, stacked, stacked 100%, floating, horizontal, flat/gradient/3D/cylinder styles | done |
 | Pie and donut: flat, gradient, 3D, full and half, explode | done |
 | Watermark | done |
 | `Draw2File()` to PNG, JPG, BMP, GIF | basic |
-| Line and area series: line, area, stacked, stacked 100%, spline, stair, 3D, cable, symbols | done |
+| Line and area series: line, area, indexed, stacked, stacked 100%, spline, stair, 3D, cable, symbols | done |
 | Printer (EMF+, EMF, BMP), clipboard (EMF and bitmap) | done |
 | XY with X/Y axes, high-low (OHLC, candlestick), volume bars, pyramid flat and 3D | done |
 | Custom objects (`RMC_CO*`), tooltips, zoom | next |

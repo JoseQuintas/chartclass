@@ -1411,10 +1411,26 @@ static ARGB chc_PointColor( CHC_REGION * pRegion, int iSeries, int iPoint )
 }
 
 /* label columns used by series, line series can have more points by column */
+/* floating bar has two values by bar: start and length */
+static HB_BOOL chc_IsFloating( CHC_SERIES * pSeries )
+{
+   return pSeries->iKind == CHC_SER_BAR && ( pSeries->iType == RMC_FLOATINGBAR || pSeries->iType == RMC_FLOATINGBARGROUP );
+}
+
 /* high-low has four values by point: open, high, low, close */
 static int chc_SeriesPoints( CHC_SERIES * pSeries )
 {
+   if( chc_IsFloating( pSeries ) )
+      return pSeries->nData / 2;
    return pSeries->iKind == CHC_SER_HIGHLOW ? pSeries->nData / 4 : pSeries->nData;
+}
+
+/* indexed line or area: first value = 100, others in percent of first */
+static double chc_SeriesValue( CHC_SERIES * pSeries, int iPoint )
+{
+   if( pSeries->iKind == CHC_SER_LINE && ( pSeries->iType == RMC_LINE_INDEXED || pSeries->iType == RMC_AREA_INDEXED ) )
+      return pSeries->pData[ 0 ] != 0 ? pSeries->pData[ iPoint ] * 100 / fabs( pSeries->pData[ 0 ] ) : 0;
+   return pSeries->pData[ iPoint ];
 }
 
 /* high-low and volume without points per column are spread on the grid, without columns */
@@ -1860,7 +1876,7 @@ static REAL chc_ValuePos( CHC_GRIDINFO * pInfo, int iAxis, double dValue )
 
 static void chc_BarsDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_GRIDINFO * pInfo )
 {
-   int  nSlots = 0, iStackSlot = -1, n, i;
+   int  nSlots = 0, iStackSlot = -1, iFloatSlot = -1, n, i;
    int  aSlot[ CHC_MAXSERIES ];
    REAL fCat, fGroup, fSlot;
    double * pPos, * pNeg, * pTotal;
@@ -1876,6 +1892,13 @@ static void chc_BarsDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_GRIDINFO * pInf
          if( iStackSlot < 0 )
             iStackSlot = nSlots++;
          aSlot[ n ] = iStackSlot;
+      }
+      else if( pSeries->iType == RMC_FLOATINGBAR )
+      {
+         /* floating bars share the same place, floating group has one by series */
+         if( iFloatSlot < 0 )
+            iFloatSlot = nSlots++;
+         aSlot[ n ] = iFloatSlot;
       }
       else
          aSlot[ n ] = nSlots++;
@@ -1911,11 +1934,15 @@ static void chc_BarsDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_GRIDINFO * pInf
       if( aSlot[ n ] < 0 )
          continue;
       for( i = 0; i < pSeries->nData; i++ )
-         dSum += fabs( pSeries->pData[ i ] );
-
-      for( i = 0; i < pSeries->nData && i < pInfo->nCat; i++ )
       {
-         double dValue = pSeries->pData[ i ], dFrom, dTo;
+         if( ! chc_IsFloating( pSeries ) || i % 2 == 1 )
+            dSum += fabs( pSeries->pData[ i ] );
+      }
+
+      for( i = 0; i < chc_SeriesPoints( pSeries ) && i < pInfo->nCat; i++ )
+      {
+         HB_BOOL lFloat = chc_IsFloating( pSeries );
+         double dValue = lFloat ? pSeries->pData[ i * 2 + 1 ] : pSeries->pData[ i ], dFrom, dTo;
          REAL   p1, p2, fStart;
          CHC_BOX bar;
          ARGB   color = chc_PointColor( pRegion, n, i );
@@ -1939,12 +1966,12 @@ static void chc_BarsDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_GRIDINFO * pInf
          }
          else
          {
-            dFrom = 0;
+            dFrom = lFloat ? pSeries->pData[ i * 2 ] : 0;
             if( dFrom < pInfo->dMin[ iAxis ] )
                dFrom = pInfo->dMin[ iAxis ];
             if( dFrom > pInfo->dMax[ iAxis ] )
                dFrom = pInfo->dMax[ iAxis ];
-            dTo = dValue;
+            dTo = lFloat ? pSeries->pData[ i * 2 ] + dValue : dValue;
          }
          if( dTo > pInfo->dMax[ iAxis ] )
             dTo = pInfo->dMax[ iAxis ];
@@ -1973,12 +2000,12 @@ static void chc_BarsDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_GRIDINFO * pInf
          if( pSeries->iHatch == RMC_HATCHBRUSH_ON )
             chc_BarHatch( dc, &bar, color, n );
 
-         chc_ValueText( pSeries, pSeries->pData[ i ], dSum, nDecimals, "", szLabel, sizeof( szLabel ) );
+         chc_ValueText( pSeries, lFloat ? dValue : pSeries->pData[ i ], dSum, nDecimals, "", szLabel, sizeof( szLabel ) );
          if( *szLabel )
          {
             REAL tw, th;
             chc_TextSize( dc, szLabel, 7, HB_FALSE, &tw, &th );
-            if( lStack )
+            if( lStack || lFloat )
                chc_TextAngle( dc, szLabel, 7, HB_FALSE, chc_Contrast( color ), bar.x + bar.w / 2, bar.y + bar.h / 2, 0 );
             else if( pInfo->lVertical )
                chc_TextAngle( dc, szLabel, 7, HB_FALSE, 0xFF000000, bar.x + bar.w / 2, ( dValue >= 0 ? bar.y - th / 2 - 1 : bar.y + bar.h + th / 2 + 1 ) - ( pSeries->iStyle == RMC_BAR_3D || pSeries->iStyle == RMC_BAR_3D_GRADIENT ? HB_MIN( bar.w * 0.35f, 14 ) : 0 ), 0 );
@@ -2390,7 +2417,7 @@ static void chc_LinesDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_GRIDINFO * pIn
       pBottom = ( CHC_POINTF * ) hb_xgrab( sizeof( CHC_POINTF ) * pSeries->nData );
       for( i = 0; i < pSeries->nData; i++ )
       {
-         double dValue = pSeries->pData[ i ], dFrom, dTo;
+         double dValue = chc_SeriesValue( pSeries, i ), dFrom, dTo;
          REAL   fPos = chc_PointCat( pSeries, i, fCat );
 
          dSum += fabs( dValue );
@@ -2415,7 +2442,7 @@ static void chc_LinesDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_GRIDINFO * pIn
          nPts++;
       }
       for( ; i < pSeries->nData; i++ )
-         dSum += fabs( pSeries->pData[ i ] );
+         dSum += fabs( chc_SeriesValue( pSeries, i ) );
 
       /* stair adds points */
       nDraw       = nPts;
@@ -2496,7 +2523,7 @@ static void chc_LinesDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_GRIDINFO * pIn
 
             if( iSymbol != RMC_SYMBOL_NONE )
                r = chc_Symbol( dc, iSymbol, pTop[ i ].X, pTop[ i ].Y, chc_Alpha( chc_PointColor( pRegion, n, i ), ( int ) ( color >> 24 ) ) );
-            chc_ValueText( pSeries, pSeries->pData[ i ], dSum, nDecimals, "", szLabel, sizeof( szLabel ) );
+            chc_ValueText( pSeries, chc_SeriesValue( pSeries, i ), dSum, nDecimals, "", szLabel, sizeof( szLabel ) );
             if( *szLabel )
             {
                REAL tw, th;
@@ -2653,8 +2680,18 @@ static void chc_DataRange( CHC_REGION * pRegion, int iAxis, double * pLow, doubl
          *pl100 = HB_TRUE;
       for( i = 0; i < pSeries->nData; i++ )
       {
-         double d = pSeries->pData[ i ];
-         if( pSeries->iKind == CHC_SER_BAR && pSeries->iType == RMC_BARSTACKED )
+         double d = chc_SeriesValue( pSeries, i );
+         if( chc_IsFloating( pSeries ) )
+         {
+            /* start and end of bar */
+            if( i % 2 == 1 )
+            {
+               d = pSeries->pData[ i - 1 ] + pSeries->pData[ i ];
+               *pHigh = HB_MAX( *pHigh, HB_MAX( d, pSeries->pData[ i - 1 ] ) );
+               *pLow  = HB_MIN( *pLow, HB_MIN( d, pSeries->pData[ i - 1 ] ) );
+            }
+         }
+         else if( pSeries->iKind == CHC_SER_BAR && pSeries->iType == RMC_BARSTACKED )
          {
             if( d >= 0 )
                pPos[ i ] += d;
