@@ -29,7 +29,7 @@ Phase 1, work in progress.
 | Watermark | done |
 | `Draw2File()` to PNG, JPG, BMP, GIF | basic |
 | Line and area series: line, area, stacked, stacked 100%, spline, stair, 3D, cable, symbols | done |
-| Printer, clipboard | next |
+| Printer (EMF+, EMF, BMP), clipboard (EMF and bitmap) | done |
 | XY, high-low, volume bars, pyramid | next |
 | Custom objects (`RMC_CO*`), tooltips, zoom | next |
 | `.rmc` files | last |
@@ -84,6 +84,8 @@ methods are accepted too. The `RMC_*()` functions can also be called directly, w
 - Numbers are formatted without locale: decimal "," and thousand "." by default, changed with
   `CHC_SetNumberFormat( cDecimal, cThousand, cSuffix )` or `oChart:SetNumberFormat()`.
 - `RMC_CreateChartOnDC()` draws on a DC received, `RMC_Split*()` are simple Harbour functions.
+- `RMC_Draw2Printer()` with hDC 0 shows the printer dialog and prints one page. With a hDC it only
+  draws, StartDoc()/StartPage() are of the caller. Position and size in mm, size 0 = printable width.
 
 ## Tests
 
