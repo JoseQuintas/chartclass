@@ -113,6 +113,10 @@ CHC_GDIP_FUNC( GpStatus, GdipSaveImageToFile, ( GpImage *, const WCHAR *, const 
 CHC_GDIP_FUNC( GpStatus, GdipLoadImageFromFile, ( const WCHAR *, GpImage ** ) )
 CHC_GDIP_FUNC( GpStatus, GdipDisposeImage, ( GpImage * ) )
 CHC_GDIP_FUNC( GpStatus, GdipDrawImageRectI, ( GpGraphics *, GpImage *, INT, INT, INT, INT ) )
+CHC_GDIP_FUNC( GpStatus, GdipRecordMetafile, ( HDC, int, const CHC_RECTF *, int, const WCHAR *, GpImage ** ) )
+CHC_GDIP_FUNC( GpStatus, GdipGetHemfFromMetafile, ( GpImage *, HENHMETAFILE * ) )
+CHC_GDIP_FUNC( GpStatus, GdipScaleWorldTransform, ( GpGraphics *, REAL, REAL, int ) )
+CHC_GDIP_FUNC( GpStatus, GdipSetPageUnit, ( GpGraphics *, int ) )
 
 #define CHC_GDIP_ENTRY( name )  { #name, ( FARPROC * ) &p##name }
 
@@ -182,13 +186,18 @@ static const struct
    CHC_GDIP_ENTRY( GdipSaveImageToFile ),
    CHC_GDIP_ENTRY( GdipLoadImageFromFile ),
    CHC_GDIP_ENTRY( GdipDisposeImage ),
-   CHC_GDIP_ENTRY( GdipDrawImageRectI )
+   CHC_GDIP_ENTRY( GdipDrawImageRectI ),
+   CHC_GDIP_ENTRY( GdipRecordMetafile ),
+   CHC_GDIP_ENTRY( GdipGetHemfFromMetafile ),
+   CHC_GDIP_ENTRY( GdipScaleWorldTransform ),
+   CHC_GDIP_ENTRY( GdipSetPageUnit )
 };
 
 /* GDI+ enums used here */
 #define GP_SMOOTHINGANTIALIAS     4
 #define GP_TEXTANTIALIASGRIDFIT   3
 #define GP_PIXELOFFSETHALF        4
+#define GP_UNITWORLD              0
 #define GP_UNITPIXEL              2
 #define GP_UNITPOINT              3
 #define GP_FILLALTERNATE          0
@@ -208,6 +217,10 @@ static const struct
 #define GP_FORMATNOCLIP           0x00004000
 #define GP_PIXELFORMAT32BPPARGB   0x0026200A
 #define GP_LINEJOINROUND          2
+#define GP_MATRIXPREPEND          0
+#define GP_EMFTYPEEMFONLY         3
+#define GP_EMFTYPEEMFPLUSDUAL     5
+#define GP_FRAMEUNITPIXEL         2
 
 /* ---------------------------------------------------------------- RMC_* values */
 
@@ -368,6 +381,10 @@ static const struct
 #define RMC_BICOLOR_LABELAXIS     2
 #define RMC_BICOLOR_BOTH          3
 
+#define RMC_EMF                   1
+#define RMC_EMFPLUS               2
+#define RMC_BMP                   3
+
 #define RMC_EXPLODE_SMALLEST      -1
 #define RMC_EXPLODE_BIGGEST       -2
 
@@ -383,7 +400,10 @@ static const struct
 #define RMC_ERROR_WRONGREGION     -9
 #define RMC_ERROR_CREATEWINDOW    -11
 #define RMC_ERROR_INIGDIP         -12
+#define RMC_ERROR_PRINT           -13
 #define RMC_ERROR_NOGDIP          -14
+#define RMC_ERROR_EMF             -20
+#define RMC_ERROR_CLIPBOARD       -24
 #define RMC_ERROR_FILECREATE      -26
 #define RMC_ERROR_AXISALIGNMENT   -29
 
@@ -915,7 +935,7 @@ static GpPen * chc_Pen( ARGB color, REAL width, int iLineStyle )
 {
    GpPen * pen = NULL;
 
-   pGdipCreatePen1( color, width, GP_UNITPIXEL, &pen );
+   pGdipCreatePen1( color, width, GP_UNITWORLD, &pen );
    switch( iLineStyle )
    {
       case RMC_LINESTYLEDASH:    pGdipSetPenDashStyle( pen, 1 ); break;
@@ -3531,6 +3551,202 @@ static int chc_DrawToFile( CHC_CHART * pChart, const char * szFile, int iWidth, 
    return iResult;
 }
 
+/* chart recorded on EMF or EMF+ (dual), in pixels of screen */
+static GpImage * chc_Metafile( CHC_CHART * pChart, int iType )
+{
+   GpImage *    meta = NULL;
+   GpGraphics * g = NULL;
+   CHC_RECTF    rc;
+   HDC          hRef = GetDC( NULL );
+
+   rc.X = 0; rc.Y = 0; rc.Width = ( REAL ) pChart->w; rc.Height = ( REAL ) pChart->h;
+   if( pGdipRecordMetafile( hRef, iType == RMC_EMF ? GP_EMFTYPEEMFONLY : GP_EMFTYPEEMFPLUSDUAL, &rc, GP_FRAMEUNITPIXEL, L"chartclass", &meta ) == 0 && meta )
+   {
+      if( pGdipGetImageGraphicsContext( meta, &g ) == 0 && g )
+      {
+         chc_Render( pChart, g, pChart->w, pChart->h );
+         pGdipDeleteGraphics( g );
+      }
+      else
+      {
+         pGdipDisposeImage( meta );
+         meta = NULL;
+      }
+   }
+   ReleaseDC( NULL, hRef );
+
+   return meta;
+}
+
+/* chart on bitmap, fScale times the chart size */
+static GpImage * chc_Bitmap( CHC_CHART * pChart, REAL fScale )
+{
+   GpImage *    bitmap = NULL;
+   GpGraphics * g = NULL;
+
+   if( fScale < 1 )
+      fScale = 1;
+   if( pGdipCreateBitmapFromScan0( ( INT ) ( pChart->w * fScale ), ( INT ) ( pChart->h * fScale ), 0, GP_PIXELFORMAT32BPPARGB, NULL, &bitmap ) != 0 || bitmap == NULL )
+      return NULL;
+   pGdipGetImageGraphicsContext( bitmap, &g );
+   pGdipGraphicsClear( g, 0xFFFFFFFF );
+   pGdipScaleWorldTransform( g, fScale, fScale, GP_MATRIXPREPEND );
+   chc_Render( pChart, g, pChart->w, pChart->h );
+   pGdipDeleteGraphics( g );
+
+   return bitmap;
+}
+
+/* EMF or EMF+ and also bitmap, the program that paste choose */
+static int chc_DrawToClipboard( CHC_CHART * pChart, int iType )
+{
+   HENHMETAFILE hEmf = NULL;
+   HBITMAP      hBmp = NULL;
+   HWND         hOwner = pChart->hWnd ? pChart->hWnd : pChart->hParent;
+   HWND         hTemp = NULL;
+   HB_BOOL      lOk;
+
+   if( iType == RMC_EMF || iType == RMC_EMFPLUS )
+   {
+      GpImage * meta = chc_Metafile( pChart, iType );
+      if( meta == NULL )
+         return RMC_ERROR_EMF;
+      pGdipGetHemfFromMetafile( meta, &hEmf );
+      pGdipDisposeImage( meta );
+      if( hEmf == NULL )
+         return RMC_ERROR_EMF;
+   }
+   if( chc_DrawToMemory( pChart ) == RMC_NO_ERROR )
+   {
+      HDC hScreen = GetDC( NULL );
+      HDC hDC = CreateCompatibleDC( hScreen );
+      hBmp = CreateCompatibleBitmap( hScreen, pChart->w, pChart->h );
+      if( hBmp )
+      {
+         HGDIOBJ hOld = SelectObject( hDC, hBmp );
+         BitBlt( hDC, 0, 0, pChart->w, pChart->h, pChart->hMemDC, 0, 0, SRCCOPY );
+         SelectObject( hDC, hOld );
+      }
+      DeleteDC( hDC );
+      ReleaseDC( NULL, hScreen );
+   }
+   if( hEmf == NULL && hBmp == NULL )
+      return RMC_ERROR_CLIPBOARD;
+
+   /* without owner window SetClipboardData() fails */
+   if( hOwner == NULL )
+      hOwner = hTemp = CreateWindowExW( 0, L"STATIC", L"", 0, 0, 0, 0, 0, HWND_MESSAGE, NULL, GetModuleHandleW( NULL ), NULL );
+   lOk = OpenClipboard( hOwner );
+   if( lOk )
+   {
+      EmptyClipboard();
+      if( hEmf && SetClipboardData( CF_ENHMETAFILE, hEmf ) )
+         hEmf = NULL;
+      if( hBmp && SetClipboardData( CF_BITMAP, hBmp ) )
+         hBmp = NULL;
+      CloseClipboard();
+   }
+   if( hEmf )
+      DeleteEnhMetaFile( hEmf );
+   if( hBmp )
+      DeleteObject( hBmp );
+   if( hTemp )
+      DestroyWindow( hTemp );
+
+   return lOk ? RMC_NO_ERROR : RMC_ERROR_CLIPBOARD;
+}
+
+/* hDC informed: only draws, StartDoc()/StartPage() are of caller
+   hDC zero: printer dialog, one page
+   position and size in mm, zero size = all printable width, same proportion of chart */
+static int chc_DrawToPrinter( CHC_CHART * pChart, HDC hDC, int iLeft, int iTop, int iWidth, int iHeight, int iType )
+{
+   HB_BOOL      lOwnDC = ( hDC == NULL );
+   GpGraphics * g = NULL;
+   GpImage *    image;
+   int          iResult = RMC_NO_ERROR;
+   double       dPixX, dPixY, dW, dH, dMaxW, dMaxH;
+
+   if( pChart->w <= 0 || pChart->h <= 0 )
+      return RMC_ERROR_PRINT;
+   if( lOwnDC )
+   {
+      PRINTDLGW pd;
+      DOCINFOW  di;
+
+      memset( &pd, 0, sizeof( pd ) );
+      pd.lStructSize = sizeof( pd );
+      pd.hwndOwner   = pChart->hWnd ? pChart->hWnd : pChart->hParent;
+      pd.Flags       = PD_RETURNDC | PD_NOSELECTION | PD_NOPAGENUMS;
+      if( ! PrintDlgW( &pd ) )
+         return CommDlgExtendedError() == 0 ? RMC_NO_ERROR : RMC_ERROR_PRINT;   /* zero = canceled */
+      if( pd.hDevMode )
+         GlobalFree( pd.hDevMode );
+      if( pd.hDevNames )
+         GlobalFree( pd.hDevNames );
+      hDC = pd.hDC;
+      if( hDC == NULL )
+         return RMC_ERROR_PRINT;
+      memset( &di, 0, sizeof( di ) );
+      di.cbSize      = sizeof( di );
+      di.lpszDocName = L"chartclass";
+      if( StartDocW( hDC, &di ) <= 0 || StartPage( hDC ) <= 0 )
+      {
+         DeleteDC( hDC );
+         return RMC_ERROR_PRINT;
+      }
+   }
+
+   /* mm to printer pixels, from printable area */
+   dPixX = GetDeviceCaps( hDC, LOGPIXELSX ) / 25.4;
+   dPixY = GetDeviceCaps( hDC, LOGPIXELSY ) / 25.4;
+   dMaxW = GetDeviceCaps( hDC, HORZRES ) - iLeft * dPixX;
+   dMaxH = GetDeviceCaps( hDC, VERTRES ) - iTop * dPixY;
+   dW = iWidth * dPixX;
+   dH = iHeight * dPixY;
+   if( dW <= 0 && dH <= 0 )
+   {
+      dW = dMaxW;
+      dH = dW * pChart->h / pChart->w;
+      if( dH > dMaxH )
+      {
+         dH = dMaxH;
+         dW = dH * pChart->w / pChart->h;
+      }
+   }
+   else if( dW <= 0 )
+      dW = dH * pChart->w / pChart->h;
+   else if( dH <= 0 )
+      dH = dW * pChart->h / pChart->w;
+
+   if( iType == RMC_BMP )
+      image = chc_Bitmap( pChart, ( REAL ) HB_MIN( dW / pChart->w, 3000.0 / HB_MAX( pChart->w, pChart->h ) ) );
+   else
+      image = chc_Metafile( pChart, iType == RMC_EMF ? RMC_EMF : RMC_EMFPLUS );
+   if( image == NULL )
+      iResult = RMC_ERROR_PRINT;
+   else
+   {
+      if( pGdipCreateFromHDC( hDC, &g ) == 0 && g )
+      {
+         pGdipSetPageUnit( g, GP_UNITPIXEL );
+         pGdipDrawImageRectI( g, image, ( INT ) ( iLeft * dPixX ), ( INT ) ( iTop * dPixY ), ( INT ) dW, ( INT ) dH );
+         pGdipDeleteGraphics( g );
+      }
+      else
+         iResult = RMC_ERROR_PRINT;
+      pGdipDisposeImage( image );
+   }
+
+   if( lOwnDC )
+   {
+      EndPage( hDC );
+      EndDoc( hDC );
+      DeleteDC( hDC );
+   }
+   return iResult;
+}
+
 /* ---------------------------------------------------------------- Harbour API, same as RMC_* */
 
 /* RMC_CreateChart( hParent, nCtrlId, nX, nY, nWidth, nHeight, nBgColor, nCtrlStyle, lExportOnly, cBgImage, cFontName, nToolTipWidth, nBitmapBgColor ) */
@@ -3925,6 +4141,33 @@ HB_FUNC( RMC_DRAW2FILE )
    hb_retni( chc_DrawToFile( pChart, hb_parcx( 2 ), hb_parni( 3 ), hb_parni( 4 ) ) );
 }
 
+/* RMC_Draw2Clipboard( nCtrlId, nType ) */
+HB_FUNC( RMC_DRAW2CLIPBOARD )
+{
+   CHC_CHART * pChart = chc_ChartGet( hb_parni( 1 ) );
+
+   if( pChart == NULL )
+   {
+      hb_retni( RMC_ERROR_CTRLID );
+      return;
+   }
+   hb_retni( chc_DrawToClipboard( pChart, hb_parni( 2 ) ) );
+}
+
+/* RMC_Draw2Printer( nCtrlId, hPrinterDC, nLeft, nTop, nWidth, nHeight, nType ) */
+HB_FUNC( RMC_DRAW2PRINTER )
+{
+   CHC_CHART * pChart = chc_ChartGet( hb_parni( 1 ) );
+   HDC hDC = HB_ISPOINTER( 2 ) ? ( HDC ) hb_parptr( 2 ) : ( HDC ) ( HB_PTRUINT ) hb_parnint( 2 );
+
+   if( pChart == NULL )
+   {
+      hb_retni( RMC_ERROR_CTRLID );
+      return;
+   }
+   hb_retni( chc_DrawToPrinter( pChart, hDC, hb_parni( 3 ), hb_parni( 4 ), hb_parni( 5 ), hb_parni( 6 ), hb_parni( 7 ) ) );
+}
+
 /* RMC_Reset( nCtrlId ) - remove regions and series, keeps the window and last image */
 HB_FUNC( RMC_RESET )
 {
@@ -4063,8 +4306,6 @@ CHC_TODO( RMC_COSYMBOL )
 CHC_TODO( RMC_COTEXT )
 CHC_TODO( RMC_COVISIBLE )
 CHC_TODO( RMC_CREATECHARTFROMFILE )
-CHC_TODO( RMC_DRAW2CLIPBOARD )
-CHC_TODO( RMC_DRAW2PRINTER )
 CHC_TODO( RMC_GETCHARTSIZEFROMFILE )
 CHC_TODO( RMC_GETDATA )
 CHC_TODO( RMC_GETDATACOUNT )
