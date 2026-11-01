@@ -46,8 +46,44 @@ FUNCTION Main( cPrefix )
    ? "candlestick",  ChartHighLow( cPrefix + "_16_candle.png", RMC_CANDLESTICK )
    ? "ohlc",         ChartHighLow( cPrefix + "_17_ohlc.png", RMC_OHLC )
    ? "pyramid",      ChartPyramid( cPrefix + "_18_pyramid.png" )
+   ? "floating",     ChartFloating( cPrefix + "_19_floating.png" )
+   ? "indexed",      ChartIndexed( cPrefix + "_20_indexed.png" )
 
    RETURN NIL
+
+STATIC FUNCTION ChartFloating( cFile )
+
+   LOCAL nChartId, oChart := RMChartClass():New()
+
+   nChartId := oChart:GetChartId()
+   oChart:CreateChart( s_hParent, nChartId, 0, 0, CHART_WIDTH, CHART_HEIGHT, RMC_COLOR_WHITE, RMC_CTRLSTYLEFLAT, .T., "", "Tahoma", 0, RMC_COLOR_DEFAULT )
+   oChart:AddRegion( nChartId, 5, 5, -5, -5, "", .F. )
+   oChart:AddCaption( nChartId, 1, "Floating bars: planned and done (start, length)", RMC_COLOR_STEEL_BLUE, RMC_COLOR_WHITE, 11, .T. )
+   oChart:AddGrid( nChartId, 1, RMC_COLOR_WHITE, .F., 0, 0, 0, 0, RMC_BICOLOR_LABELAXIS )
+   oChart:AddDataAxis( nChartId, 1, RMC_DATAAXISBOTTOM, 0, 30, 7, 8, RMC_COLOR_BLACK, RMC_COLOR_SILVER, RMC_LINESTYLEDOT, 0, "", "Days", "", RMC_TEXTCENTER )
+   oChart:AddLabelAxis( nChartId, 1, "Analysis*Design*Coding*Tests*Delivery", 1, 5, RMC_LABELAXISLEFT, 8, RMC_COLOR_BLACK, RMC_TEXTCENTER, RMC_COLOR_BLACK, RMC_LINESTYLENONE, "" )
+   oChart:AddLegend( nChartId, 1, "Planned*Done", RMC_LEGEND_BOTTOM, RMC_COLOR_DEFAULT, RMC_LEGENDNORECT, RMC_COLOR_DEFAULT, 8, .F. )
+   oChart:AddBarSeries( nChartId, 1, { 0, 5, 5, 6, 10, 12, 20, 5, 25, 3 }, 10, RMC_FLOATINGBARGROUP, RMC_BAR_FLAT_GRADIENT2, .F., RMC_COLOR_CORN_FLOWER_BLUE, .T., 1, RMC_VLABEL_DEFAULT, 1, RMC_HATCHBRUSH_OFF )
+   oChart:AddBarSeries( nChartId, 1, { 0, 6, 6, 8, 13, 13, 24, 4, 28, 2 }, 10, RMC_FLOATINGBARGROUP, RMC_BAR_FLAT_GRADIENT2, .F., RMC_COLOR_DARK_GREEN, .T., 1, RMC_VLABEL_DEFAULT, 1, RMC_HATCHBRUSH_OFF )
+
+   RETURN SaveChart( oChart, nChartId, cFile )
+
+STATIC FUNCTION ChartIndexed( cFile )
+
+   LOCAL nChartId, oChart := RMChartClass():New()
+
+   nChartId := oChart:GetChartId()
+   oChart:CreateChart( s_hParent, nChartId, 0, 0, CHART_WIDTH, CHART_HEIGHT, RMC_COLOR_WHITE, RMC_CTRLSTYLEFLAT, .T., "", "Tahoma", 0, RMC_COLOR_DEFAULT )
+   oChart:AddRegion( nChartId, 5, 5, -5, -5, "", .F. )
+   oChart:AddCaption( nChartId, 1, "Indexed: first value = 100", RMC_COLOR_STEEL_BLUE, RMC_COLOR_WHITE, 11, .T. )
+   oChart:AddGrid( nChartId, 1, RMC_COLOR_WHITE, .F., 0, 0, 0, 0, RMC_BICOLOR_NONE )
+   oChart:AddDataAxis( nChartId, 1, RMC_DATAAXISLEFT, 80, 130, 11, 8, RMC_COLOR_BLACK, RMC_COLOR_SILVER, RMC_LINESTYLEDOT, 0, "", "", "", RMC_TEXTCENTER )
+   oChart:AddLabelAxis( nChartId, 1, "Jan*Feb*Mar*Apr*May*Jun", 1, 6, RMC_LABELAXISBOTTOM, 8, RMC_COLOR_BLACK, RMC_TEXTCENTER, RMC_COLOR_BLACK, RMC_LINESTYLENONE, "" )
+   oChart:AddLegend( nChartId, 1, "Index A (10.000 points)*Index B (2.000 points)", RMC_LEGEND_BOTTOM, RMC_COLOR_DEFAULT, RMC_LEGENDNORECT, RMC_COLOR_DEFAULT, 8, .F. )
+   oChart:AddLineSeries( nChartId, 1, { 10000, 10400, 10200, 11000, 11500, 11200 }, 6, 0, 0, RMC_AREA_INDEXED, RMC_AREA_FLAT, RMC_LSTYLE_LINE, .T., RMC_COLOR_CORN_FLOWER_BLUE, RMC_SYMBOL_NONE, 1, RMC_VLABEL_NONE, RMC_HATCHBRUSH_OFF )
+   oChart:AddLineSeries( nChartId, 1, { 2000, 1900, 2100, 2300, 2250, 2500 }, 6, 0, 0, RMC_LINE_INDEXED, RMC_LINE_FLAT, RMC_LSTYLE_LINE, .F., RMC_COLOR_CRIMSON, RMC_SYMBOL_ROUND, 1, RMC_VLABEL_DEFAULT, RMC_HATCHBRUSH_OFF )
+
+   RETURN SaveChart( oChart, nChartId, cFile )
 
 STATIC FUNCTION ChartXY( cFile )
 
