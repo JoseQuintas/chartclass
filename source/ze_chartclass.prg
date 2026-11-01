@@ -24,6 +24,8 @@ CREATE CLASS ChartClass
    METHOD GetChartID()                     INLINE ::ChartID += 1, AAdd( ::aIdChartList, ::ChartID ), ::ChartID
    METHOD FreeChartList()
    METHOD AddHightLowSeries( ... )         INLINE ::AddHighLowSeries( ... ) // old name
+   METHOD AddXSeries( ... )                INLINE ::AddXYSeries( ... ) // old name
+   METHOD AddYSeries( ... )                INLINE ::AddXYSeries( ... ) // old name
    METHOD CreateChartOnDc( ... )           INLINE RMC_CREATECHARTONDC( ... )
    METHOD AddBarSeries( ... )              INLINE RMC_ADDBARSERIES( ... )
    METHOD AddRegion( ... )                 INLINE RMC_ADDREGION( ... )
