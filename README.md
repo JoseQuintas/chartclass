@@ -30,7 +30,7 @@ Phase 1, work in progress.
 | `Draw2File()` to PNG, JPG, BMP, GIF | basic |
 | Line and area series: line, area, stacked, stacked 100%, spline, stair, 3D, cable, symbols | done |
 | Printer (EMF+, EMF, BMP), clipboard (EMF and bitmap) | done |
-| XY, high-low, volume bars, pyramid | next |
+| XY with X/Y axes, high-low (OHLC, candlestick), volume bars, pyramid flat and 3D | done |
 | Custom objects (`RMC_CO*`), tooltips, zoom | next |
 | `.rmc` files | last |
 

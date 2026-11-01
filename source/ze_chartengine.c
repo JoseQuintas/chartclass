@@ -406,6 +406,26 @@ static const struct
 #define RMC_ERROR_CLIPBOARD       -24
 #define RMC_ERROR_FILECREATE      -26
 #define RMC_ERROR_AXISALIGNMENT   -29
+#define RMC_ERROR_XYAXIS          -18
+
+#define RMC_OHLC                  1
+#define RMC_CANDLESTICK           2
+
+#define RMC_XY_LINE_DASHDOTDOT    66
+#define RMC_XY_LINE_DASHDOT       67
+#define RMC_XY_LINE_DASH          68
+#define RMC_XY_LINE_DOT           69
+#define RMC_XY_LINE               70
+#define RMC_XY_SYMBOL             71
+#define RMC_XY_CABLE              73
+
+#define RMC_YAXISLEFT             9
+#define RMC_YAXISRIGHT            10
+#define RMC_XAXISTOP              11
+#define RMC_XAXISBOTTOM           12
+
+#define RMC_COLOR_RED             0xFFFF0000
+#define RMC_COLOR_LIME_GREEN      0xFF32CD32
 
 /* ---------------------------------------------------------------- chart data */
 
@@ -417,7 +437,15 @@ static const struct
 #define CHC_SER_BAR       1
 #define CHC_SER_LINE      2
 #define CHC_SER_GRIDLESS  3
-#define CHC_SER_OTHER     9
+#define CHC_SER_XY        4
+#define CHC_SER_HIGHLOW   5
+#define CHC_SER_VOLUME    6
+
+/* XY axis index */
+#define CHC_XBOTTOM       0
+#define CHC_XTOP          1
+#define CHC_YLEFT         2
+#define CHC_YRIGHT        3
 
 #define CHC_DEFAULTFONT   "Tahoma"
 #define CHC_CLASSNAME     L"CHARTCLASS_CTRL"
@@ -429,8 +457,14 @@ typedef struct
    int      nData;
    ARGB *   pColors;          /* colors by point, 0 = series color */
    int      nColors;
-   int *    pPPC;             /* line series, points per label column */
+   int *    pPPC;             /* line, high-low and volume series, points per label column */
    int      nPPC;
+   double * pX;               /* XY series, X values, pData are Y values */
+   int      nX;
+   int      iXAxis;
+   int      iYAxis;
+   ARGB     colorLow;         /* high-low series */
+   ARGB     colorHigh;
    int      iType;
    int      iStyle;
    int      iLineStyle;
@@ -525,6 +559,7 @@ typedef struct
    CHC_DAXIS   daxis[ 2 ];
    int         nDAxis;
    CHC_LAXIS   laxis;
+   CHC_DAXIS   xyaxis[ 4 ];      /* XY charts, CHC_XBOTTOM ... CHC_YRIGHT */
    CHC_LEGEND  legend;
    CHC_SERIES  series[ CHC_MAXSERIES ];
    int         nSeries;
@@ -1214,6 +1249,8 @@ static void chc_SeriesFree( CHC_SERIES * pSeries )
       hb_xfree( pSeries->pColors );
    if( pSeries->pPPC )
       hb_xfree( pSeries->pPPC );
+   if( pSeries->pX )
+      hb_xfree( pSeries->pX );
    memset( pSeries, 0, sizeof( CHC_SERIES ) );
 }
 
@@ -1228,6 +1265,12 @@ static void chc_RegionFree( CHC_REGION * pRegion )
       chc_StrFree( &pRegion->daxis[ n ].szUnit );
       chc_StrFree( &pRegion->daxis[ n ].szText );
       chc_StrFree( &pRegion->daxis[ n ].szLabels );
+   }
+   for( n = 0; n < 4; n++ )
+   {
+      chc_StrFree( &pRegion->xyaxis[ n ].szUnit );
+      chc_StrFree( &pRegion->xyaxis[ n ].szText );
+      chc_StrFree( &pRegion->xyaxis[ n ].szLabels );
    }
    chc_StrFree( &pRegion->laxis.szLabels );
    chc_StrFree( &pRegion->laxis.szText );
@@ -1368,12 +1411,21 @@ static ARGB chc_PointColor( CHC_REGION * pRegion, int iSeries, int iPoint )
 }
 
 /* label columns used by series, line series can have more points by column */
+/* high-low has four values by point: open, high, low, close */
+static int chc_SeriesPoints( CHC_SERIES * pSeries )
+{
+   return pSeries->iKind == CHC_SER_HIGHLOW ? pSeries->nData / 4 : pSeries->nData;
+}
+
+/* high-low and volume without points per column are spread on the grid, without columns */
 static int chc_SeriesCats( CHC_SERIES * pSeries )
 {
-   if( pSeries->iKind != CHC_SER_LINE || pSeries->pPPC == NULL )
-      return pSeries->nData;
+   int nPoints = chc_SeriesPoints( pSeries );
+
+   if( pSeries->pPPC == NULL )
+      return ( pSeries->iKind == CHC_SER_HIGHLOW || pSeries->iKind == CHC_SER_VOLUME ) ? 0 : nPoints;
    if( pSeries->nPPC == 1 )
-      return ( pSeries->nData + HB_MAX( pSeries->pPPC[ 0 ], 1 ) - 1 ) / HB_MAX( pSeries->pPPC[ 0 ], 1 );
+      return ( nPoints + HB_MAX( pSeries->pPPC[ 0 ], 1 ) - 1 ) / HB_MAX( pSeries->pPPC[ 0 ], 1 );
    return pSeries->nPPC;
 }
 
@@ -2469,6 +2521,108 @@ static void chc_LinesDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_GRIDINFO * pIn
    hb_xfree( pTotal );
 }
 
+/* ---------------------------------------------------------------- high-low and volume */
+
+static void chc_StockDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_GRIDINFO * pInfo )
+{
+   int  n, i;
+   REAL fLength = pInfo->lVertical ? pInfo->grid.w : pInfo->grid.h;
+   REAL fCat;
+
+   if( pInfo->nCat == 0 )
+      return;
+   fCat = fLength / pInfo->nCat;
+   for( n = 0; n < pRegion->nSeries; n++ )
+   {
+      CHC_SERIES * pSeries = &pRegion->series[ n ];
+      int  iAxis = ( pSeries->iAxis == 2 && pRegion->nDAxis > 1 ) ? 1 : 0;
+      int  nPts = chc_SeriesPoints( pSeries );
+      REAL * pPos;
+
+      if( ( pSeries->iKind != CHC_SER_HIGHLOW && pSeries->iKind != CHC_SER_VOLUME ) || pSeries->lHide || nPts == 0 )
+         continue;
+      pPos = ( REAL * ) hb_xgrab( sizeof( REAL ) * nPts );
+      for( i = 0; i < nPts; i++ )
+         pPos[ i ] = pSeries->pPPC ? chc_PointCat( pSeries, i, fCat ) : ( i + 0.5f ) * fLength / nPts;
+
+      for( i = 0; i < nPts && pPos[ i ] <= fLength; i++ )
+      {
+         /* space for point, distance to the next or previous */
+         REAL fSlot = nPts == 1 ? fCat : ( i < nPts - 1 ? pPos[ i + 1 ] - pPos[ i ] : pPos[ i ] - pPos[ i - 1 ] );
+         REAL fHalf = HB_MAX( fSlot * 0.35f, 1.5f );
+
+         if( pSeries->iKind == CHC_SER_VOLUME )
+         {
+            double dFrom = HB_MAX( HB_MIN( 0, pInfo->dMax[ iAxis ] ), pInfo->dMin[ iAxis ] );
+            double dTo   = HB_MAX( HB_MIN( pSeries->pData[ i ], pInfo->dMax[ iAxis ] ), pInfo->dMin[ iAxis ] );
+            CHC_POINTF p1 = chc_LinePoint( pInfo, iAxis, dFrom, pPos[ i ] );
+            CHC_POINTF p2 = chc_LinePoint( pInfo, iAxis, dTo, pPos[ i ] );
+            GpPen * pen = chc_Pen( chc_PointColor( pRegion, n, i ), 2, RMC_LINESTYLESOLID );
+            pGdipDrawLine( dc->g, pen, p1.X, p1.Y, p2.X, p2.Y );
+            pGdipDeletePen( pen );
+         }
+         else
+         {
+            double dOpen  = HB_MAX( HB_MIN( pSeries->pData[ i * 4 ], pInfo->dMax[ iAxis ] ), pInfo->dMin[ iAxis ] );
+            double dHigh  = HB_MAX( HB_MIN( pSeries->pData[ i * 4 + 1 ], pInfo->dMax[ iAxis ] ), pInfo->dMin[ iAxis ] );
+            double dLow   = HB_MAX( HB_MIN( pSeries->pData[ i * 4 + 2 ], pInfo->dMax[ iAxis ] ), pInfo->dMin[ iAxis ] );
+            double dClose = HB_MAX( HB_MIN( pSeries->pData[ i * 4 + 3 ], pInfo->dMax[ iAxis ] ), pInfo->dMin[ iAxis ] );
+            CHC_POINTF pO = chc_LinePoint( pInfo, iAxis, dOpen, pPos[ i ] );
+            CHC_POINTF pH = chc_LinePoint( pInfo, iAxis, dHigh, pPos[ i ] );
+            CHC_POINTF pL = chc_LinePoint( pInfo, iAxis, dLow, pPos[ i ] );
+            CHC_POINTF pC = chc_LinePoint( pInfo, iAxis, dClose, pPos[ i ] );
+            ARGB   color = pSeries->pData[ i * 4 + 3 ] >= pSeries->pData[ i * 4 ] ? pSeries->colorHigh : pSeries->colorLow;
+            GpPen * pen;
+
+            if( pSeries->iStyle == RMC_CANDLESTICK )
+            {
+               CHC_POINTF pt[ 4 ];
+               REAL fA = pInfo->lVertical ? HB_MIN( pO.Y, pC.Y ) : HB_MIN( pO.X, pC.X );
+               REAL fB = pInfo->lVertical ? HB_MAX( pO.Y, pC.Y ) : HB_MAX( pO.X, pC.X );
+               if( fB - fA < 1 )
+                  fB = fA + 1;
+               pen = chc_Pen( chc_Dark( color, 0.4 ), 1, RMC_LINESTYLESOLID );
+               pGdipDrawLine( dc->g, pen, pL.X, pL.Y, pH.X, pH.Y );
+               pGdipDeletePen( pen );
+               if( pInfo->lVertical )
+               {
+                  pt[ 0 ].X = pO.X - fHalf; pt[ 0 ].Y = fA;
+                  pt[ 1 ].X = pO.X + fHalf; pt[ 1 ].Y = fA;
+                  pt[ 2 ].X = pO.X + fHalf; pt[ 2 ].Y = fB;
+                  pt[ 3 ].X = pO.X - fHalf; pt[ 3 ].Y = fB;
+               }
+               else
+               {
+                  pt[ 0 ].X = fA; pt[ 0 ].Y = pO.Y - fHalf;
+                  pt[ 1 ].X = fB; pt[ 1 ].Y = pO.Y - fHalf;
+                  pt[ 2 ].X = fB; pt[ 2 ].Y = pO.Y + fHalf;
+                  pt[ 3 ].X = fA; pt[ 3 ].Y = pO.Y + fHalf;
+               }
+               chc_FillPoly( dc, pt, 4, color, chc_Dark( color, 0.4 ), 1 );
+            }
+            else
+            {
+               /* OHLC: line low-high, open at left, close at right */
+               pen = chc_Pen( color, 2, RMC_LINESTYLESOLID );
+               pGdipDrawLine( dc->g, pen, pL.X, pL.Y, pH.X, pH.Y );
+               if( pInfo->lVertical )
+               {
+                  pGdipDrawLine( dc->g, pen, pO.X - fHalf, pO.Y, pO.X, pO.Y );
+                  pGdipDrawLine( dc->g, pen, pC.X, pC.Y, pC.X + fHalf, pC.Y );
+               }
+               else
+               {
+                  pGdipDrawLine( dc->g, pen, pO.X, pO.Y - fHalf, pO.X, pO.Y );
+                  pGdipDrawLine( dc->g, pen, pC.X, pC.Y, pC.X, pC.Y + fHalf );
+               }
+               pGdipDeletePen( pen );
+            }
+         }
+      }
+      hb_xfree( pPos );
+   }
+}
+
 /* ---------------------------------------------------------------- grid and axis */
 
 static void chc_DataRange( CHC_REGION * pRegion, int iAxis, double * pLow, double * pHigh, HB_BOOL * pl100 )
@@ -2492,7 +2646,7 @@ static void chc_DataRange( CHC_REGION * pRegion, int iAxis, double * pLow, doubl
    {
       CHC_SERIES * pSeries = &pRegion->series[ n ];
       int iSerAxis = ( pSeries->iAxis == 2 && pRegion->nDAxis > 1 ) ? 1 : 0;
-      if( pSeries->iKind == CHC_SER_GRIDLESS || pSeries->lHide || iSerAxis != iAxis )
+      if( pSeries->iKind == CHC_SER_GRIDLESS || pSeries->iKind == CHC_SER_XY || pSeries->lHide || iSerAxis != iAxis )
          continue;
       if( ( pSeries->iType == RMC_BARSTACKED100 && pSeries->iKind == CHC_SER_BAR ) ||
           ( pSeries->iType == RMC_AREA_STACKED100 && pSeries->iKind == CHC_SER_LINE ) )
@@ -2532,6 +2686,12 @@ static void chc_AxisLabel( CHC_DAXIS * pAxis, double dMin, double dMax, int iTic
 {
    int nTicks = pAxis->nTicks < 2 ? 2 : pAxis->nTicks;
 
+   /* "-" = without labels */
+   if( pAxis->szLabels && strcmp( pAxis->szLabels, "-" ) == 0 )
+   {
+      *szDest = '\0';
+      return;
+   }
    if( pAxis->szLabels && *pAxis->szLabels )
    {
       chc_ListItem( pAxis->szLabels, iTick, szDest, iSize );
@@ -2619,6 +2779,11 @@ static void chc_GridDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_BOX * pArea )
    }
    if( info.nCat == 0 && pLA->lSet )
       info.nCat = chc_ListCount( pLA->szLabels );
+   for( n = 0; n < pRegion->nSeries && info.nCat == 0; n++ )
+   {
+      if( pRegion->series[ n ].iKind == CHC_SER_HIGHLOW || pRegion->series[ n ].iKind == CHC_SER_VOLUME )
+         info.nCat = chc_SeriesPoints( &pRegion->series[ n ] );
+   }
 
    /* margins for data axis labels */
    for( n = 0; n < nAxis; n++ )
@@ -2899,10 +3064,335 @@ static void chc_GridDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_BOX * pArea )
 
    chc_LinesDraw( dc, pRegion, &info, HB_TRUE );    /* areas, behind bars */
    chc_BarsDraw( dc, pRegion, &info );
+   chc_StockDraw( dc, pRegion, &info );
    chc_LinesDraw( dc, pRegion, &info, HB_FALSE );   /* lines, symbols and labels */
 
    if( pRegion->legend.lSet && ! pRegion->legend.lHide && chc_LegendIsFloat( pRegion->legend.iAlign ) )
       chc_LegendFloat( dc, pRegion, &info.grid );
+}
+
+/* ---------------------------------------------------------------- XY charts */
+
+static HB_BOOL chc_IsXY( CHC_REGION * pRegion )
+{
+   int n;
+
+   for( n = 0; n < 4; n++ )
+   {
+      if( pRegion->xyaxis[ n ].lSet )
+         return HB_TRUE;
+   }
+   for( n = 0; n < pRegion->nSeries; n++ )
+   {
+      if( pRegion->series[ n ].iKind == CHC_SER_XY )
+         return HB_TRUE;
+   }
+   return HB_FALSE;
+}
+
+static int chc_XYAxisOf( CHC_SERIES * pSeries, HB_BOOL lX )
+{
+   if( lX )
+      return pSeries->iXAxis == RMC_XAXISTOP ? CHC_XTOP : CHC_XBOTTOM;
+   return pSeries->iYAxis == RMC_YAXISRIGHT ? CHC_YRIGHT : CHC_YLEFT;
+}
+
+static REAL chc_XYPos( CHC_BOX * pGrid, int iAxis, double dMin, double dMax, double dValue )
+{
+   double dRel = dMax > dMin ? ( dValue - dMin ) / ( dMax - dMin ) : 0;
+
+   if( dRel < 0 )
+      dRel = 0;
+   if( dRel > 1 )
+      dRel = 1;
+   if( iAxis == CHC_XBOTTOM || iAxis == CHC_XTOP )
+      return pGrid->x + ( REAL ) ( dRel * pGrid->w );
+   return pGrid->y + pGrid->h - ( REAL ) ( dRel * pGrid->h );
+}
+
+static void chc_XYDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_BOX * pArea )
+{
+   CHC_DAXIS  defAxis[ 4 ], * pAx[ 4 ];
+   CHC_GRID * pGrid = &pRegion->grid;
+   CHC_BOX    grid;
+   double     dMin[ 4 ], dMax[ 4 ];
+   HB_BOOL    lShow[ 4 ], lData[ 4 ];
+   REAL       fLeft = 4, fRight = 4, fTop = 4, fBottom = 4, tw, th, fMaxW, fMaxH;
+   int        k, n, i, nTicks, iFS;
+   char       szText[ 256 ];
+   HB_BOOL    lBold;
+
+   /* axis, default when not informed */
+   for( k = 0; k < 4; k++ )
+   {
+      memset( &defAxis[ k ], 0, sizeof( CHC_DAXIS ) );
+      defAxis[ k ].nTicks = 11;
+      defAxis[ k ].iFontSize = 8;
+      pAx[ k ] = pRegion->xyaxis[ k ].lSet ? &pRegion->xyaxis[ k ] : &defAxis[ k ];
+      lShow[ k ] = pRegion->xyaxis[ k ].lSet;
+   }
+   if( ! lShow[ CHC_XBOTTOM ] && ! lShow[ CHC_XTOP ] )
+      lShow[ CHC_XBOTTOM ] = HB_TRUE;
+   if( ! lShow[ CHC_YLEFT ] && ! lShow[ CHC_YRIGHT ] )
+      lShow[ CHC_YLEFT ] = HB_TRUE;
+
+   /* range */
+   for( k = 0; k < 4; k++ )
+   {
+      double dLow = 0, dHigh = 0;
+      lData[ k ] = HB_FALSE;
+      for( n = 0; n < pRegion->nSeries; n++ )
+      {
+         CHC_SERIES * pSeries = &pRegion->series[ n ];
+         HB_BOOL lX = ( k == CHC_XBOTTOM || k == CHC_XTOP );
+         double * pValues = lX ? pSeries->pX : pSeries->pData;
+         int nValues = lX ? pSeries->nX : pSeries->nData;
+         if( pSeries->iKind != CHC_SER_XY || pSeries->lHide || chc_XYAxisOf( pSeries, lX ) != k )
+            continue;
+         for( i = 0; i < nValues; i++ )
+         {
+            if( ! lData[ k ] )
+               dLow = dHigh = pValues[ i ];
+            dLow  = HB_MIN( dLow, pValues[ i ] );
+            dHigh = HB_MAX( dHigh, pValues[ i ] );
+            lData[ k ] = HB_TRUE;
+         }
+      }
+      if( pAx[ k ]->dMax > pAx[ k ]->dMin )
+      {
+         dMin[ k ] = pAx[ k ]->dMin;
+         dMax[ k ] = pAx[ k ]->dMax;
+      }
+      else
+         chc_AutoScale( dLow, dHigh, pAx[ k ]->nTicks, &dMin[ k ], &dMax[ k ] );
+   }
+   /* axis without series, same range of the other */
+   for( k = 0; k < 4; k += 2 )
+   {
+      if( ! lData[ k ] && lData[ k + 1 ] && ! ( pAx[ k ]->dMax > pAx[ k ]->dMin ) )
+      {
+         dMin[ k ] = dMin[ k + 1 ];
+         dMax[ k ] = dMax[ k + 1 ];
+      }
+      else if( ! lData[ k + 1 ] && ! ( pAx[ k + 1 ]->dMax > pAx[ k + 1 ]->dMin ) )
+      {
+         dMin[ k + 1 ] = dMin[ k ];
+         dMax[ k + 1 ] = dMax[ k ];
+      }
+   }
+
+   /* margins */
+   for( k = 0; k < 4; k++ )
+   {
+      if( ! lShow[ k ] )
+         continue;
+      nTicks = pAx[ k ]->nTicks < 2 ? 2 : pAx[ k ]->nTicks;
+      fMaxW = fMaxH = 0;
+      for( i = 0; i < nTicks; i++ )
+      {
+         chc_AxisLabel( pAx[ k ], dMin[ k ], dMax[ k ], i, szText, sizeof( szText ) );
+         chc_TextSize( dc, szText, pAx[ k ]->iFontSize, HB_FALSE, &tw, &th );
+         fMaxW = HB_MAX( fMaxW, tw );
+         fMaxH = HB_MAX( fMaxH, th );
+      }
+      iFS = pAx[ k ]->iFontSize + 1;
+      lBold = HB_FALSE;
+      chc_TextFormat( pAx[ k ]->szText, szText, sizeof( szText ), &iFS, &lBold );
+      tw = th = 0;
+      if( *szText )
+         chc_TextSize( dc, szText, iFS, lBold, &tw, &th );
+      switch( k )
+      {
+         case CHC_YLEFT:   fLeft   = HB_MAX( fLeft, fMaxW + 6 + ( th > 0 ? th + 4 : 0 ) ); fTop = HB_MAX( fTop, fMaxH / 2 + 2 ); fBottom = HB_MAX( fBottom, fMaxH / 2 + 2 ); break;
+         case CHC_YRIGHT:  fRight  = HB_MAX( fRight, fMaxW + 6 + ( th > 0 ? th + 4 : 0 ) ); fTop = HB_MAX( fTop, fMaxH / 2 + 2 ); fBottom = HB_MAX( fBottom, fMaxH / 2 + 2 ); break;
+         case CHC_XTOP:    fTop    = HB_MAX( fTop, fMaxH + 4 + ( th > 0 ? th + 2 : 0 ) ); fLeft = HB_MAX( fLeft, fMaxW / 2 + 2 ); fRight = HB_MAX( fRight, fMaxW / 2 + 2 ); break;
+         default:          fBottom = HB_MAX( fBottom, fMaxH + 4 + ( th > 0 ? th + 2 : 0 ) ); fLeft = HB_MAX( fLeft, fMaxW / 2 + 2 ); fRight = HB_MAX( fRight, fMaxW / 2 + 2 ); break;
+      }
+   }
+
+   /* grid area, fixed or auto */
+   if( pGrid->iWidth > 0 && pGrid->iHeight > 0 )
+   {
+      grid.x = ( REAL ) ( pRegion->x + pGrid->iLeft );
+      grid.y = ( REAL ) ( pRegion->y + pGrid->iTop );
+      grid.w = ( REAL ) pGrid->iWidth;
+      grid.h = ( REAL ) pGrid->iHeight;
+   }
+   else
+   {
+      grid.x = pArea->x + fLeft;
+      grid.y = pArea->y + fTop;
+      grid.w = pArea->w - fLeft - fRight;
+      grid.h = pArea->h - fTop - fBottom;
+   }
+   grid.x = ( REAL ) floor( grid.x );
+   grid.y = ( REAL ) floor( grid.y );
+   grid.w = ( REAL ) floor( grid.w );
+   grid.h = ( REAL ) floor( grid.h );
+   if( grid.w < 10 || grid.h < 10 )
+      return;
+
+   /* background */
+   {
+      ARGB bg = chc_Color( pGrid->bgColor, 0xFFFFFFFF );
+      if( pGrid->lSet && ! chc_IsTransparent( bg ) )
+      {
+         if( pGrid->lGradient )
+            chc_FillGradient( dc, 0xFFFFFFFF, bg, grid.x, grid.y, grid.w, grid.h, HB_TRUE, HB_FALSE );
+         else
+            chc_FillRect( dc, bg, grid.x, grid.y, grid.w, grid.h );
+      }
+   }
+
+   /* grid lines of first X and first Y axis, labels, axis lines and texts */
+   for( k = 0; k < 4; k++ )
+   {
+      HB_BOOL lX = ( k == CHC_XBOTTOM || k == CHC_XTOP );
+      HB_BOOL lFirst = ( k == CHC_XBOTTOM || k == CHC_YLEFT || ( k == CHC_XTOP && ! lShow[ CHC_XBOTTOM ] ) || ( k == CHC_YRIGHT && ! lShow[ CHC_YLEFT ] ) );
+      ARGB lineColor = chc_Color( pAx[ k ]->lineColor, 0xFF000000 );
+      ARGB textColor = chc_Color( pAx[ k ]->textColor, 0xFF000000 );
+
+      if( ! lShow[ k ] )
+         continue;
+      nTicks = pAx[ k ]->nTicks < 2 ? 2 : pAx[ k ]->nTicks;
+      for( i = 0; i < nTicks; i++ )
+      {
+         REAL fPos = ( lX ? grid.w : grid.h ) * i / ( nTicks - 1 );
+         if( lFirst && i > 0 && i < nTicks - 1 )
+         {
+            if( lX )
+               chc_Line( dc, lineColor, pAx[ k ]->iLineStyle, grid.x + fPos, grid.y, grid.x + fPos, grid.y + grid.h - 1 );
+            else
+               chc_Line( dc, lineColor, pAx[ k ]->iLineStyle, grid.x, grid.y + grid.h - fPos, grid.x + grid.w - 1, grid.y + grid.h - fPos );
+         }
+         chc_AxisLabel( pAx[ k ], dMin[ k ], dMax[ k ], i, szText, sizeof( szText ) );
+         chc_TextSize( dc, szText, pAx[ k ]->iFontSize, HB_FALSE, &tw, &th );
+         switch( k )
+         {
+            case CHC_YLEFT:
+               chc_Line( dc, lineColor, RMC_LINESTYLESOLID, grid.x - 3, grid.y + grid.h - fPos, grid.x, grid.y + grid.h - fPos );
+               chc_TextRect( dc, szText, pAx[ k ]->iFontSize, HB_FALSE, textColor, grid.x - 5 - tw, grid.y + grid.h - fPos - th / 2, tw, th, GP_ALIGNFAR, GP_ALIGNCENTER );
+               break;
+            case CHC_YRIGHT:
+               chc_Line( dc, lineColor, RMC_LINESTYLESOLID, grid.x + grid.w - 1, grid.y + grid.h - fPos, grid.x + grid.w + 2, grid.y + grid.h - fPos );
+               chc_TextRect( dc, szText, pAx[ k ]->iFontSize, HB_FALSE, textColor, grid.x + grid.w + 4, grid.y + grid.h - fPos - th / 2, tw, th, GP_ALIGNNEAR, GP_ALIGNCENTER );
+               break;
+            case CHC_XTOP:
+               chc_Line( dc, lineColor, RMC_LINESTYLESOLID, grid.x + fPos, grid.y - 3, grid.x + fPos, grid.y );
+               chc_TextAngle( dc, szText, pAx[ k ]->iFontSize, HB_FALSE, textColor, grid.x + fPos, grid.y - 4 - th / 2, 0 );
+               break;
+            default:
+               chc_Line( dc, lineColor, RMC_LINESTYLESOLID, grid.x + fPos, grid.y + grid.h - 1, grid.x + fPos, grid.y + grid.h + 2 );
+               chc_TextAngle( dc, szText, pAx[ k ]->iFontSize, HB_FALSE, textColor, grid.x + fPos, grid.y + grid.h + 3 + th / 2, 0 );
+               break;
+         }
+      }
+      switch( k )
+      {
+         case CHC_YLEFT:  chc_Line( dc, lineColor, RMC_LINESTYLESOLID, grid.x, grid.y, grid.x, grid.y + grid.h - 1 ); break;
+         case CHC_YRIGHT: chc_Line( dc, lineColor, RMC_LINESTYLESOLID, grid.x + grid.w - 1, grid.y, grid.x + grid.w - 1, grid.y + grid.h - 1 ); break;
+         case CHC_XTOP:   chc_Line( dc, lineColor, RMC_LINESTYLESOLID, grid.x, grid.y, grid.x + grid.w - 1, grid.y ); break;
+         default:         chc_Line( dc, lineColor, RMC_LINESTYLESOLID, grid.x, grid.y + grid.h - 1, grid.x + grid.w - 1, grid.y + grid.h - 1 ); break;
+      }
+      iFS = pAx[ k ]->iFontSize + 1;
+      lBold = HB_FALSE;
+      chc_TextFormat( pAx[ k ]->szText, szText, sizeof( szText ), &iFS, &lBold );
+      if( *szText )
+      {
+         chc_TextSize( dc, szText, iFS, lBold, &tw, &th );
+         switch( k )
+         {
+            case CHC_YLEFT:  chc_TextAngle( dc, szText, iFS, lBold, textColor, pArea->x + th / 2 + 1, grid.y + grid.h / 2, -90 ); break;
+            case CHC_YRIGHT: chc_TextAngle( dc, szText, iFS, lBold, textColor, pArea->x + pArea->w - th / 2 - 1, grid.y + grid.h / 2, 90 ); break;
+            case CHC_XTOP:   chc_TextAngle( dc, szText, iFS, lBold, textColor, grid.x + grid.w / 2, pArea->y + th / 2 + 1, 0 ); break;
+            default:         chc_TextAngle( dc, szText, iFS, lBold, textColor, grid.x + grid.w / 2, pArea->y + pArea->h - th / 2 - 1, 0 ); break;
+         }
+      }
+   }
+
+   /* series */
+   for( n = 0; n < pRegion->nSeries; n++ )
+   {
+      CHC_SERIES * pSeries = &pRegion->series[ n ];
+      int  kx = chc_XYAxisOf( pSeries, HB_TRUE ), ky = chc_XYAxisOf( pSeries, HB_FALSE );
+      int  nPts = HB_MIN( pSeries->nX, pSeries->nData ), nDraw;
+      int  iSymbol = pSeries->iSymbol, iStyle;
+      HB_BOOL lSpline = ( pSeries->iLineStyle == RMC_LSTYLE_SPLINE || pSeries->iLineStyle == RMC_LSTYLE_SPLINE_AREA );
+      HB_BOOL lStair  = ( pSeries->iLineStyle == RMC_LSTYLE_STAIR || pSeries->iLineStyle == RMC_LSTYLE_STAIR_AREA );
+      HB_BOOL lArea   = ( pSeries->iLineStyle >= RMC_LSTYLE_LINE_AREA && pSeries->iLineStyle <= RMC_LSTYLE_STAIR_AREA );
+      ARGB    color   = chc_SeriesColor( pRegion, n );
+      CHC_POINTF * pt, * pDraw;
+
+      if( pSeries->iKind != CHC_SER_XY || pSeries->lHide || nPts == 0 )
+         continue;
+      pt    = ( CHC_POINTF * ) hb_xgrab( sizeof( CHC_POINTF ) * nPts );
+      pDraw = ( CHC_POINTF * ) hb_xgrab( sizeof( CHC_POINTF ) * ( nPts * 2 + 2 ) );
+      for( i = 0; i < nPts; i++ )
+      {
+         pt[ i ].X = chc_XYPos( &grid, kx, dMin[ kx ], dMax[ kx ], pSeries->pX[ i ] );
+         pt[ i ].Y = chc_XYPos( &grid, ky, dMin[ ky ], dMax[ ky ], pSeries->pData[ i ] );
+      }
+      /* stair: horizontal until next X, then vertical */
+      nDraw = 0;
+      for( i = 0; i < nPts; i++ )
+      {
+         if( lStair && i > 0 )
+         {
+            pDraw[ nDraw ].X = pt[ i ].X;
+            pDraw[ nDraw ].Y = pt[ i - 1 ].Y;
+            nDraw++;
+         }
+         pDraw[ nDraw++ ] = pt[ i ];
+      }
+      switch( pSeries->iStyle )
+      {
+         case RMC_XY_LINE_DOT:        iStyle = RMC_LINE_FLAT_DOT; break;
+         case RMC_XY_LINE_DASH:       iStyle = RMC_LINE_FLAT_DASH; break;
+         case RMC_XY_LINE_DASHDOT:    iStyle = RMC_LINE_FLAT_DASHDOT; break;
+         case RMC_XY_LINE_DASHDOTDOT: iStyle = RMC_LINE_FLAT_DASHDOTDOT; break;
+         case RMC_XY_CABLE:           iStyle = RMC_LINE_CABLE; break;
+         case RMC_XY_SYMBOL:          iStyle = RMC_LINE_SYMBOLONLY; break;
+         default:                     iStyle = RMC_LINE_FLAT; break;
+      }
+      if( lArea && nDraw > 1 )
+      {
+         /* transparent area until the bottom of grid */
+         GpPath * path = NULL;
+         GpBrush * brush = chc_Solid( chc_Alpha( color, 60 ) );
+         CHC_POINTF base[ 2 ];
+         base[ 0 ].X = pDraw[ nDraw - 1 ].X; base[ 0 ].Y = grid.y + grid.h;
+         base[ 1 ].X = pDraw[ 0 ].X;         base[ 1 ].Y = grid.y + grid.h;
+         pGdipCreatePath( GP_FILLALTERNATE, &path );
+         chc_PathPoints( path, pDraw, nDraw, lSpline );
+         pGdipAddPathLine2( path, base, 2 );
+         pGdipClosePathFigure( path );
+         pGdipFillPath( dc->g, brush, path );
+         pGdipDeleteBrush( brush );
+         pGdipDeletePath( path );
+      }
+      if( iStyle != RMC_LINE_SYMBOLONLY )
+         chc_LineDraw( dc, pDraw, nDraw, lSpline, color, iStyle );
+      if( iStyle == RMC_LINE_SYMBOLONLY && iSymbol == RMC_SYMBOL_NONE )
+         iSymbol = RMC_SYMBOL_ROUND;
+      for( i = 0; i < nPts; i++ )
+      {
+         char szLabel[ 96 ];
+         REAL r = 0;
+         if( iSymbol != RMC_SYMBOL_NONE )
+            r = chc_Symbol( dc, iSymbol, pt[ i ].X, pt[ i ].Y, chc_PointColor( pRegion, n, i ) );
+         chc_ValueText( pSeries, pSeries->pData[ i ], 0, pAx[ ky ]->nDecimals, "", szLabel, sizeof( szLabel ) );
+         if( *szLabel )
+         {
+            chc_TextSize( dc, szLabel, 7, HB_FALSE, &tw, &th );
+            chc_TextAngle( dc, szLabel, 7, HB_FALSE, 0xFF000000, pt[ i ].X, pt[ i ].Y - HB_MAX( r, 2 ) - th / 2 - 1, 0 );
+         }
+      }
+      hb_xfree( pt );
+      hb_xfree( pDraw );
+   }
+
+   if( pRegion->legend.lSet && ! pRegion->legend.lHide && chc_LegendIsFloat( pRegion->legend.iAlign ) )
+      chc_LegendFloat( dc, pRegion, &grid );
 }
 
 /* ---------------------------------------------------------------- pie and donut */
@@ -2964,6 +3454,101 @@ static void chc_PieWallFront( CHC_DC * dc, CHC_SLICE * pSlice, CHC_BOX * pEll, R
    }
 }
 
+/* ---------------------------------------------------------------- pyramid */
+
+static CHC_POINTF chc_EdgePoint( CHC_POINTF * pBase, CHC_POINTF * pApex, double dFactor )
+{
+   CHC_POINTF pt;
+
+   pt.X = pBase->X + ( REAL ) ( ( pApex->X - pBase->X ) * dFactor );
+   pt.Y = pBase->Y + ( REAL ) ( ( pApex->Y - pBase->Y ) * dFactor );
+   return pt;
+}
+
+/* first value at the bottom, height of layer by value */
+static void chc_PyramidDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_SERIES * pSeries, double dTotal, CHC_BOX * pArea )
+{
+   int  n, nData = pSeries->nData, iSeries = ( int ) ( pSeries - pRegion->series );
+   HB_BOOL l3D = ( pSeries->iStyle == RMC_PYRAMIDE3 );
+   HB_BOOL lOnLabels = pRegion->legend.lSet && ! pRegion->legend.lHide && pRegion->legend.iAlign == RMC_LEGEND_ONVLABELS;
+   REAL fLabel = 0, tw, th, fW, fH, fDepth, cx, yTop, yBase;
+   CHC_POINTF apex, baseL, baseF, baseR, pt[ 4 ];
+   char szText[ 256 ], szValue[ 96 ];
+   double dCum = 0;
+
+   for( n = 0; n < nData; n++ )
+   {
+      *szText = '\0';
+      if( lOnLabels )
+         chc_ListItem( pRegion->legend.szText, n, szText, sizeof( szText ) );
+      chc_ValueText( pSeries, pSeries->pData[ n ], dTotal, chc_Decimals( pSeries->pData[ n ] ), "", szValue, sizeof( szValue ) );
+      if( *szValue )
+         hb_strncat( hb_strncat( szText, *szText ? " " : "", sizeof( szText ) - 1 ), szValue, sizeof( szText ) - 1 );
+      chc_TextSize( dc, szText, 8, HB_FALSE, &tw, &th );
+      fLabel = HB_MAX( fLabel, tw );
+   }
+   fH = pArea->h - 20;
+   fW = pArea->w - 2 * ( fLabel + 16 );
+   fW = HB_MIN( fW, fH * 1.1f );
+   if( fW < 10 || fH < 10 )
+      return;
+   fDepth = l3D ? fW * 0.15f : 0;
+   cx     = pArea->x + pArea->w / 2;
+   yTop   = pArea->y + 10;
+   yBase  = yTop + fH - fDepth;
+   apex.X  = cx;                    apex.Y  = yTop;
+   baseL.X = cx - fW / 2;           baseL.Y = yBase;
+   baseR.X = cx + fW / 2;           baseR.Y = yBase;
+   baseF.X = cx - fW * 0.1f;        baseF.Y = yBase + fDepth;
+
+   for( n = 0; n < nData; n++ )
+   {
+      double t0 = dCum / dTotal, t1 = ( dCum + fabs( pSeries->pData[ n ] ) ) / dTotal;
+      ARGB   color = chc_PointColor( pRegion, iSeries, n );
+      CHC_POINTF ptLabel;
+
+      dCum += fabs( pSeries->pData[ n ] );
+      if( pSeries->lLucent )
+         color = chc_Alpha( color, 170 );
+      if( l3D )
+      {
+         /* left face, right face darker */
+         pt[ 0 ] = chc_EdgePoint( &baseL, &apex, t0 );
+         pt[ 1 ] = chc_EdgePoint( &baseF, &apex, t0 );
+         pt[ 2 ] = chc_EdgePoint( &baseF, &apex, t1 );
+         pt[ 3 ] = chc_EdgePoint( &baseL, &apex, t1 );
+         chc_FillPoly( dc, pt, 4, chc_Light( color, 0.15 ), chc_Dark( color, 0.4 ), 1 );
+         pt[ 0 ] = chc_EdgePoint( &baseF, &apex, t0 );
+         pt[ 1 ] = chc_EdgePoint( &baseR, &apex, t0 );
+         pt[ 2 ] = chc_EdgePoint( &baseR, &apex, t1 );
+         pt[ 3 ] = chc_EdgePoint( &baseF, &apex, t1 );
+         chc_FillPoly( dc, pt, 4, chc_Dark( color, 0.25 ), chc_Dark( color, 0.4 ), 1 );
+      }
+      else
+      {
+         pt[ 0 ] = chc_EdgePoint( &baseL, &apex, t0 );
+         pt[ 1 ] = chc_EdgePoint( &baseR, &apex, t0 );
+         pt[ 2 ] = chc_EdgePoint( &baseR, &apex, t1 );
+         pt[ 3 ] = chc_EdgePoint( &baseL, &apex, t1 );
+         chc_FillPoly( dc, pt, 4, color, 0xFFFFFFFF, 1 );
+      }
+
+      /* label at right of layer */
+      *szText = '\0';
+      if( lOnLabels )
+         chc_ListItem( pRegion->legend.szText, n, szText, sizeof( szText ) );
+      chc_ValueText( pSeries, pSeries->pData[ n ], dTotal, chc_Decimals( pSeries->pData[ n ] ), "", szValue, sizeof( szValue ) );
+      if( *szValue )
+         hb_strncat( hb_strncat( szText, *szText ? " " : "", sizeof( szText ) - 1 ), szValue, sizeof( szText ) - 1 );
+      if( *szText )
+      {
+         ptLabel = chc_EdgePoint( &baseR, &apex, ( t0 + t1 ) / 2 );
+         chc_TextSize( dc, szText, 8, HB_FALSE, &tw, &th );
+         chc_TextAngle( dc, szText, 8, HB_FALSE, 0xFF000000, ptLabel.X + 8 + tw / 2, ptLabel.Y, 0 );
+      }
+   }
+}
+
 static void chc_GridlessDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_SERIES * pSeries, int iSeries, CHC_BOX * pArea )
 {
    CHC_SLICE * pSlices;
@@ -3000,6 +3585,11 @@ static void chc_GridlessDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_SERIES * pS
    }
    if( dTotal <= 0 )
       return;
+   if( iStyle == RMC_PYRAMIDE || iStyle == RMC_PYRAMIDE3 )
+   {
+      chc_PyramidDraw( dc, pRegion, pSeries, dTotal, pArea );
+      return;
+   }
    if( pSeries->iExplode == RMC_EXPLODE_SMALLEST )
       iExplode = iMin;
    else if( pSeries->iExplode == RMC_EXPLODE_BIGGEST )
@@ -3332,6 +3922,8 @@ static void chc_RegionDraw( CHC_DC * dc, CHC_REGION * pRegion )
          if( pRegion->legend.lSet && ! pRegion->legend.lHide && chc_LegendIsFloat( pRegion->legend.iAlign ) )
             chc_LegendFloat( dc, pRegion, &area );
       }
+      else if( chc_IsXY( pRegion ) )
+         chc_XYDraw( dc, pRegion, &area );
       else if( pRegion->grid.lSet || pRegion->nDAxis > 0 || pRegion->laxis.lSet || pRegion->nSeries > 0 )
          chc_GridDraw( dc, pRegion, &area );
    }
@@ -4070,23 +4662,131 @@ HB_FUNC( RMC_ADDLINESERIES )
    hb_retni( iResult );
 }
 
-/* not drawn yet, kept for legend and data range */
-static void chc_SeriesOther( int iKind )
+/* RMC_AddXYSeries( nCtrlId, nRegion, aDataX, nDataXCount, aDataY, nDataYCount, nColor, nStyle, nLineStyle, nSymbol, nWhichXAxis, nWhichYAxis, nValueLabel ) */
+HB_FUNC( RMC_ADDXYSERIES )
 {
    int iResult;
    CHC_SERIES * pSeries = chc_SeriesNew( &iResult );
 
    if( pSeries )
    {
-      pSeries->iKind = iKind;
-      pSeries->lHide = HB_TRUE;
+      pSeries->iKind      = CHC_SER_XY;
+      pSeries->nX         = hb_parni( 4 );
+      pSeries->pX         = chc_pardoubles( 3, &pSeries->nX );
+      pSeries->nData      = hb_parni( 6 );
+      pSeries->pData      = chc_pardoubles( 5, &pSeries->nData );
+      pSeries->color      = chc_parcolor( 7 );
+      pSeries->iStyle     = hb_parni( 8 ) > 0 ? hb_parni( 8 ) : RMC_XY_LINE;
+      pSeries->iLineStyle = hb_parni( 9 ) > 0 ? hb_parni( 9 ) : RMC_LSTYLE_LINE;
+      pSeries->iSymbol    = hb_parni( 10 );
+      pSeries->iXAxis     = hb_parni( 11 );
+      pSeries->iYAxis     = hb_parni( 12 );
+      pSeries->iVLabel    = hb_parni( 13 );
+      if( pSeries->nX == 0 || pSeries->nData == 0 )
+         iResult = RMC_ERROR_NODATA;
    }
    hb_retni( iResult );
 }
 
-HB_FUNC( RMC_ADDXYSERIES )         { chc_SeriesOther( CHC_SER_OTHER ); }
-HB_FUNC( RMC_ADDHIGHLOWSERIES )    { chc_SeriesOther( CHC_SER_OTHER ); }
-HB_FUNC( RMC_ADDVOLUMEBARSERIES )  { chc_SeriesOther( CHC_SER_OTHER ); }
+/* RMC_AddHighLowSeries( nCtrlId, nRegion, aData, nDataCount, aPPC, nPPCCount, nStyle, nWhichDataAxis, nColorLow, nColorHigh )
+   aData with open, high, low, close of each point */
+HB_FUNC( RMC_ADDHIGHLOWSERIES )
+{
+   int iResult;
+   CHC_SERIES * pSeries = chc_SeriesNew( &iResult );
+
+   if( pSeries )
+   {
+      pSeries->iKind     = CHC_SER_HIGHLOW;
+      pSeries->nData     = hb_parni( 4 );
+      pSeries->pData     = chc_pardoubles( 3, &pSeries->nData );
+      pSeries->nPPC      = hb_parni( 6 );
+      pSeries->pPPC      = chc_parints( 5, &pSeries->nPPC );
+      pSeries->iStyle    = hb_parni( 7 ) == RMC_CANDLESTICK ? RMC_CANDLESTICK : RMC_OHLC;
+      pSeries->iAxis     = hb_parni( 8 );
+      pSeries->colorLow  = chc_Color( chc_parcolor( 9 ), RMC_COLOR_RED );
+      pSeries->colorHigh = chc_Color( chc_parcolor( 10 ), RMC_COLOR_LIME_GREEN );
+      if( pSeries->nData < 4 )
+         iResult = RMC_ERROR_NODATA;
+   }
+   hb_retni( iResult );
+}
+
+/* RMC_AddVolumeBarSeries( nCtrlId, nRegion, aData, nDataCount, aPPC, nPPCCount, nColor, nWhichDataAxis ) */
+HB_FUNC( RMC_ADDVOLUMEBARSERIES )
+{
+   int iResult;
+   CHC_SERIES * pSeries = chc_SeriesNew( &iResult );
+
+   if( pSeries )
+   {
+      pSeries->iKind = CHC_SER_VOLUME;
+      pSeries->nData = hb_parni( 4 );
+      pSeries->pData = chc_pardoubles( 3, &pSeries->nData );
+      pSeries->nPPC  = hb_parni( 6 );
+      pSeries->pPPC  = chc_parints( 5, &pSeries->nPPC );
+      pSeries->color = chc_parcolor( 7 );
+      pSeries->iAxis = hb_parni( 8 );
+      if( pSeries->nData == 0 )
+         iResult = RMC_ERROR_NODATA;
+   }
+   hb_retni( iResult );
+}
+
+/* RMC_AddXAxis()/RMC_AddYAxis( nCtrlId, nRegion, nAlignment, nMin, nMax, nTickCount, nFontSize, nTextColor, nLineColor, nLineStyle, nDecimals, cUnit, cText, cLabels, nLabelAlignment ) */
+static void chc_XYAxisAdd( HB_BOOL lX )
+{
+   CHC_REGION * pRegion = chc_RegionGet( hb_parni( 1 ), hb_parni( 2 ) );
+   CHC_DAXIS * pAxis;
+   int iAlign = hb_parni( 3 ), iIndex;
+
+   if( pRegion == NULL )
+   {
+      hb_retni( RMC_ERROR_WRONGREGION );
+      return;
+   }
+   if( lX )
+   {
+      if( iAlign == 0 )
+         iAlign = RMC_XAXISBOTTOM;
+      if( iAlign != RMC_XAXISBOTTOM && iAlign != RMC_XAXISTOP )
+      {
+         hb_retni( RMC_ERROR_XYAXIS );
+         return;
+      }
+      iIndex = iAlign == RMC_XAXISTOP ? CHC_XTOP : CHC_XBOTTOM;
+   }
+   else
+   {
+      if( iAlign == 0 )
+         iAlign = RMC_YAXISLEFT;
+      if( iAlign != RMC_YAXISLEFT && iAlign != RMC_YAXISRIGHT )
+      {
+         hb_retni( RMC_ERROR_XYAXIS );
+         return;
+      }
+      iIndex = iAlign == RMC_YAXISRIGHT ? CHC_YRIGHT : CHC_YLEFT;
+   }
+   pAxis = &pRegion->xyaxis[ iIndex ];
+   pAxis->lSet        = HB_TRUE;
+   pAxis->iAlign      = iAlign;
+   pAxis->dMin        = hb_parnd( 4 );
+   pAxis->dMax        = hb_parnd( 5 );
+   pAxis->nTicks      = hb_parni( 6 ) > 0 ? hb_parni( 6 ) : 11;
+   pAxis->iFontSize   = hb_parni( 7 ) > 0 ? hb_parni( 7 ) : 8;
+   pAxis->textColor   = chc_parcolor( 8 );
+   pAxis->lineColor   = chc_parcolor( 9 );
+   pAxis->iLineStyle  = hb_parni( 10 );
+   pAxis->nDecimals   = hb_parni( 11 );
+   chc_StrSet( &pAxis->szUnit, hb_parc( 12 ) );
+   chc_StrSet( &pAxis->szText, hb_parc( 13 ) );
+   chc_StrSet( &pAxis->szLabels, hb_parc( 14 ) );
+   pAxis->iLabelAlign = hb_parni( 15 );
+   hb_retni( RMC_NO_ERROR );
+}
+
+HB_FUNC( RMC_ADDXAXIS ) { chc_XYAxisAdd( HB_TRUE ); }
+HB_FUNC( RMC_ADDYAXIS ) { chc_XYAxisAdd( HB_FALSE ); }
 
 /* RMC_Draw( nCtrlId ) */
 HB_FUNC( RMC_DRAW )
@@ -4291,8 +4991,6 @@ HB_FUNC( RMC_GETVERSION )
 #define CHC_TODO( name )  HB_FUNC( name ) { hb_retni( RMC_NO_ERROR ); }
 
 CHC_TODO( RMC_ADDTOOLTIPS )
-CHC_TODO( RMC_ADDXAXIS )
-CHC_TODO( RMC_ADDYAXIS )
 CHC_TODO( RMC_CALCAVERAGE )
 CHC_TODO( RMC_CALCTREND )
 CHC_TODO( RMC_COBOX )

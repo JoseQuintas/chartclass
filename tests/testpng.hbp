@@ -1,5 +1,6 @@
 -I../include
 ../chartclass.hbc
+hbct.hbc
 -w3
 -es2
 

@@ -42,8 +42,103 @@ FUNCTION Main( cPrefix )
    ? "area stacked", ChartAreaStacked( cPrefix + "_12_areastacked.png" )
    ? "bar and line", ChartBarLine( cPrefix + "_13_barline.png" )
    ? "3D and stair", ChartLine3D( cPrefix + "_14_line3d.png" )
+#ifdef USE_DLL
+   // not with rmchartclass: AddXAxis()/AddYAxis() pass min/max with ToDouble(), but rmchart.dll receives them by value,
+   // AddHighLowSeries() does not exist there (AddHightLowSeries() calls RMC_ADDHIGHTLOWSERIES) and PPC arrays are not converted
+   IF .F.
+#endif
+   ? "xy",           ChartXY( cPrefix + "_15_xy.png" )
+   ? "candlestick",  ChartHighLow( cPrefix + "_16_candle.png", RMC_CANDLESTICK )
+   ? "ohlc",         ChartHighLow( cPrefix + "_17_ohlc.png", RMC_OHLC )
+#ifdef USE_DLL
+   ENDIF
+#endif
+   ? "pyramid",      ChartPyramid( cPrefix + "_18_pyramid.png" )
 
    RETURN NIL
+
+STATIC FUNCTION ChartXY( cFile )
+
+   LOCAL nChartId, oChart := RMChartClass():New(), nCont
+   LOCAL aX1 := {}, aY1 := {}, aX2 := {}, aY2 := {}
+
+   FOR nCont = 0 TO 40
+      AAdd( aX1, nCont / 2 )
+      AAdd( aY1, 50 + 40 * Sin( nCont / 4 ) )
+   NEXT
+   FOR nCont = 1 TO 12
+      AAdd( aX2, nCont * 1.6 )
+      AAdd( aY2, 10 + ( nCont * 37 ) % 70 )
+   NEXT
+
+   nChartId := oChart:GetChartId()
+   oChart:CreateChart( s_hParent, nChartId, 0, 0, CHART_WIDTH, CHART_HEIGHT, RMC_COLOR_WHITE, RMC_CTRLSTYLEFLAT, .T., "", "Tahoma", 0, RMC_COLOR_DEFAULT )
+   oChart:AddRegion( nChartId, 5, 5, -5, -5, "", .F. )
+   oChart:AddCaption( nChartId, 1, "XY series", RMC_COLOR_STEEL_BLUE, RMC_COLOR_WHITE, 11, .T. )
+   oChart:AddGrid( nChartId, 1, RMC_COLOR_WHITE, .F., 0, 0, 0, 0, RMC_BICOLOR_NONE )
+   oChart:AddXAxis( nChartId, 1, RMC_XAXISBOTTOM, 0, 20, 11, 8, RMC_COLOR_BLACK, RMC_COLOR_SILVER, RMC_LINESTYLEDOT, 1, "", "X axis", "", RMC_TEXTCENTER )
+   oChart:AddYAxis( nChartId, 1, RMC_YAXISLEFT, 0, 100, 11, 8, RMC_COLOR_BLACK, RMC_COLOR_SILVER, RMC_LINESTYLEDOT, 0, "", "Y axis", "", RMC_TEXTCENTER )
+   oChart:AddLegend( nChartId, 1, "Sine*Points", RMC_LEGEND_BOTTOM, RMC_COLOR_DEFAULT, RMC_LEGENDNORECT, RMC_COLOR_DEFAULT, 8, .F. )
+   oChart:AddXYSeries( nChartId, 1, aX1, Len( aX1 ), aY1, Len( aY1 ), RMC_COLOR_DEFAULT, RMC_XY_CABLE, RMC_LSTYLE_SPLINE, RMC_SYMBOL_NONE, RMC_XAXISBOTTOM, RMC_YAXISLEFT, RMC_VLABEL_NONE )
+   oChart:AddXYSeries( nChartId, 1, aX2, Len( aX2 ), aY2, Len( aY2 ), RMC_COLOR_CRIMSON, RMC_XY_SYMBOL, RMC_LSTYLE_LINE, RMC_SYMBOL_DIAMOND, RMC_XAXISBOTTOM, RMC_YAXISLEFT, RMC_VLABEL_DEFAULT )
+
+   RETURN SaveChart( oChart, nChartId, cFile )
+
+STATIC FUNCTION ChartHighLow( cFile, nStyle )
+
+   LOCAL nChartId, oChart := RMChartClass():New(), nCont, nOpen, nClose, nHigh, nLow
+   LOCAL aData := {}, aVolume := {}, nPrice := 50
+
+   FOR nCont = 1 TO 20
+      nOpen  := nPrice
+      nClose := nPrice + ( ( nCont * 7 ) % 11 ) - 5
+      nHigh  := Max( nOpen, nClose ) + ( nCont % 3 ) + 1
+      nLow   := Min( nOpen, nClose ) - ( nCont % 4 ) - 1
+      AAdd( aData, nOpen )
+      AAdd( aData, nHigh )
+      AAdd( aData, nLow )
+      AAdd( aData, nClose )
+      AAdd( aVolume, 1000 + ( nCont * 373 ) % 2000 )
+      nPrice := nClose
+   NEXT
+
+   nChartId := oChart:GetChartId()
+   oChart:CreateChart( s_hParent, nChartId, 0, 0, CHART_WIDTH, CHART_HEIGHT, RMC_COLOR_WHITE, RMC_CTRLSTYLEFLAT, .T., "", "Tahoma", 0, RMC_COLOR_DEFAULT )
+
+   oChart:AddRegion( nChartId, 5, 5, -5, 330, "", .F. )
+   oChart:AddCaption( nChartId, 1, iif( nStyle == RMC_CANDLESTICK, "Candlestick", "OHLC" ), RMC_COLOR_STEEL_BLUE, RMC_COLOR_WHITE, 11, .T. )
+   oChart:AddGrid( nChartId, 1, RMC_COLOR_WHITE, .F., 0, 0, 0, 0, RMC_BICOLOR_LABELAXIS )
+   oChart:AddDataAxis( nChartId, 1, RMC_DATAAXISRIGHT, 30, 70, 9, 8, RMC_COLOR_BLACK, RMC_COLOR_SILVER, RMC_LINESTYLEDOT, 0, "", "", "", RMC_TEXTCENTER )
+   oChart:AddLabelAxis( nChartId, 1, "Week 1*Week 2*Week 3*Week 4", 1, 4, RMC_LABELAXISBOTTOM, 8, RMC_COLOR_BLACK, RMC_TEXTCENTER, RMC_COLOR_SILVER, RMC_LINESTYLESOLID, "" )
+   oChart:AddHighLowSeries( nChartId, 1, aData, Len( aData ), { 5 }, 1, nStyle, 1, 0, 0 )
+
+   oChart:AddRegion( nChartId, 5, 335, -5, -5, "", .F. )
+   oChart:AddGrid( nChartId, 2, RMC_COLOR_WHITE, .F., 0, 0, 0, 0, RMC_BICOLOR_LABELAXIS )
+   oChart:AddDataAxis( nChartId, 2, RMC_DATAAXISRIGHT, 0, 3000, 4, 8, RMC_COLOR_BLACK, RMC_COLOR_SILVER, RMC_LINESTYLEDOT, 0, "", "", "", RMC_TEXTCENTER )
+   oChart:AddLabelAxis( nChartId, 2, "Week 1*Week 2*Week 3*Week 4", 1, 4, RMC_LABELAXISBOTTOM, 8, RMC_COLOR_BLACK, RMC_TEXTCENTER, RMC_COLOR_SILVER, RMC_LINESTYLESOLID, "" )
+   oChart:AddVolumeBarSeries( nChartId, 2, aVolume, Len( aVolume ), { 5 }, 1, RMC_COLOR_NAVY, 1 )
+
+   RETURN SaveChart( oChart, nChartId, cFile )
+
+STATIC FUNCTION ChartPyramid( cFile )
+
+   LOCAL nChartId, oChart := RMChartClass():New()
+   LOCAL nW := Int( CHART_WIDTH / 2 )
+
+   nChartId := oChart:GetChartId()
+   oChart:CreateChart( s_hParent, nChartId, 0, 0, CHART_WIDTH, CHART_HEIGHT, RMC_COLOR_WHITE, RMC_CTRLSTYLEFLAT, .T., "", "Tahoma", 0, RMC_COLOR_DEFAULT )
+
+   oChart:AddRegion( nChartId, 5, 5, nW - 10, -5, "", .F. )
+   oChart:AddCaption( nChartId, 1, "Pyramid", RMC_COLOR_TRANSPARENT, RMC_COLOR_BLACK, 10, .T. )
+   oChart:AddLegend( nChartId, 1, "Visitors*Leads*Offers*Orders", RMC_LEGEND_BOTTOM, RMC_COLOR_DEFAULT, RMC_LEGENDNORECT, RMC_COLOR_DEFAULT, 8, .F. )
+   oChart:AddGridlessSeries( nChartId, 1, { 50, 30, 15, 5 }, 4, 0, 0, RMC_PYRAMIDE, RMC_FULL, 0, .F., RMC_VLABEL_DEFAULT, RMC_HATCHBRUSH_OFF, 0 )
+
+   oChart:AddRegion( nChartId, nW + 5, 5, -5, -5, "", .F. )
+   oChart:AddCaption( nChartId, 2, "Pyramid 3D", RMC_COLOR_TRANSPARENT, RMC_COLOR_BLACK, 10, .T. )
+   oChart:AddLegend( nChartId, 2, "Visitors*Leads*Offers*Orders", RMC_LEGEND_BOTTOM, RMC_COLOR_DEFAULT, RMC_LEGENDNORECT, RMC_COLOR_DEFAULT, 8, .F. )
+   oChart:AddGridlessSeries( nChartId, 2, { 50, 30, 15, 5 }, 4, 0, 0, RMC_PYRAMIDE3, RMC_FULL, 0, .F., RMC_VLABEL_PERCENT, RMC_HATCHBRUSH_OFF, 0 )
+
+   RETURN SaveChart( oChart, nChartId, cFile )
 
 STATIC FUNCTION ChartLines( cFile )
 
