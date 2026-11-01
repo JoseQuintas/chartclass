@@ -37,8 +37,111 @@ FUNCTION Main( cPrefix )
    ? "donut",        ChartDonut( cPrefix + "_07_donut.png" )
    ? "four regions", ChartFour( cPrefix + "_08_four.png" )
    ? "half pie",     ChartHalfPie( cPrefix + "_09_halfpie.png" )
+   ? "lines",        ChartLines( cPrefix + "_10_lines.png" )
+   ? "areas",        ChartAreas( cPrefix + "_11_areas.png" )
+   ? "area stacked", ChartAreaStacked( cPrefix + "_12_areastacked.png" )
+   ? "bar and line", ChartBarLine( cPrefix + "_13_barline.png" )
+   ? "3D and stair", ChartLine3D( cPrefix + "_14_line3d.png" )
 
    RETURN NIL
+
+STATIC FUNCTION ChartLines( cFile )
+
+   LOCAL nChartId, oChart := RMChartClass():New()
+
+   nChartId := oChart:GetChartId()
+   oChart:CreateChart( s_hParent, nChartId, 0, 0, CHART_WIDTH, CHART_HEIGHT, RMC_COLOR_WHITE, RMC_CTRLSTYLEFLAT, .T., "", "Tahoma", 0, RMC_COLOR_DEFAULT )
+   oChart:AddRegion( nChartId, 5, 5, -5, -5, "", .F. )
+   oChart:AddCaption( nChartId, 1, "Lines: flat, cable, spline, dash", RMC_COLOR_STEEL_BLUE, RMC_COLOR_WHITE, 11, .T. )
+   oChart:AddGrid( nChartId, 1, RMC_COLOR_WHITE, .F., 0, 0, 0, 0, RMC_BICOLOR_NONE )
+   oChart:AddDataAxis( nChartId, 1, RMC_DATAAXISLEFT, 0, 100, 11, 8, RMC_COLOR_BLACK, RMC_COLOR_SILVER, RMC_LINESTYLEDOT, 0, "", "", "", RMC_TEXTCENTER )
+   oChart:AddLabelAxis( nChartId, 1, "Jan*Feb*Mar*Apr*May*Jun*Jul*Aug", 1, 8, RMC_LABELAXISBOTTOM, 8, RMC_COLOR_BLACK, RMC_TEXTCENTER, RMC_COLOR_BLACK, RMC_LINESTYLENONE, "" )
+   oChart:AddLegend( nChartId, 1, "Flat*Cable shadow*Spline*Dash", RMC_LEGEND_BOTTOM, RMC_COLOR_DEFAULT, RMC_LEGENDNORECT, RMC_COLOR_DEFAULT, 8, .F. )
+   oChart:AddLineSeries( nChartId, 1, { 20, 35, 30, 50, 45, 60, 55, 70 }, 8, 0, 0, RMC_LINE, RMC_LINE_FLAT, RMC_LSTYLE_LINE, .F., RMC_COLOR_DEFAULT, RMC_SYMBOL_ROUND, 1, RMC_VLABEL_DEFAULT, RMC_HATCHBRUSH_OFF )
+   oChart:AddLineSeries( nChartId, 1, { 40, 30, 45, 35, 60, 50, 75, 65 }, 8, 0, 0, RMC_LINE, RMC_LINE_CABLE_SHADOW, RMC_LSTYLE_LINE, .F., RMC_COLOR_DEFAULT, RMC_SYMBOL_BULLET, 1, RMC_VLABEL_NONE, RMC_HATCHBRUSH_OFF )
+   oChart:AddLineSeries( nChartId, 1, { 10, 15, 25, 20, 30, 25, 35, 40 }, 8, 0, 0, RMC_LINE, RMC_LINE_FLAT, RMC_LSTYLE_SPLINE, .F., RMC_COLOR_DEFAULT, RMC_SYMBOL_DIAMOND, 1, RMC_VLABEL_NONE, RMC_HATCHBRUSH_OFF )
+   oChart:AddLineSeries( nChartId, 1, { 80, 85, 75, 90, 80, 85, 90, 95 }, 8, 0, 0, RMC_LINE, RMC_LINE_FLAT_DASH, RMC_LSTYLE_LINE, .F., RMC_COLOR_DEFAULT, RMC_SYMBOL_STAR_SMALL, 1, RMC_VLABEL_NONE, RMC_HATCHBRUSH_OFF )
+
+   RETURN SaveChart( oChart, nChartId, cFile )
+
+STATIC FUNCTION ChartAreas( cFile )
+
+   LOCAL nChartId, oChart := RMChartClass():New()
+
+   nChartId := oChart:GetChartId()
+   oChart:CreateChart( s_hParent, nChartId, 0, 0, CHART_WIDTH, CHART_HEIGHT, RMC_COLOR_ALICE_BLUE, RMC_CTRLSTYLEFLATSHADOW, .T., "", "Tahoma", 0, RMC_COLOR_DEFAULT )
+   oChart:AddRegion( nChartId, 5, 5, -5, -5, "", .F. )
+   oChart:AddCaption( nChartId, 1, "Areas: gradient, lucent, line with area", RMC_COLOR_TRANSPARENT, RMC_COLOR_NAVY, 11, .T. )
+   oChart:AddGrid( nChartId, 1, RMC_COLOR_WHITE, .F., 0, 0, 0, 0, RMC_BICOLOR_DATAAXIS )
+   oChart:AddDataAxis( nChartId, 1, RMC_DATAAXISLEFT, 0, 0, 6, 8, RMC_COLOR_BLACK, RMC_COLOR_SILVER, RMC_LINESTYLESOLID, 0, "", "", "", RMC_TEXTCENTER )
+   oChart:AddLabelAxis( nChartId, 1, "2019*2020*2021*2022*2023*2024*2025", 1, 7, RMC_LABELAXISBOTTOM, 8, RMC_COLOR_BLACK, RMC_TEXTCENTER, RMC_COLOR_BLACK, RMC_LINESTYLENONE, "" )
+   oChart:AddLegend( nChartId, 1, "Gradient*Lucent*Line with area", RMC_LEGEND_CUSTOM_UL, RMC_COLOR_WHITE, RMC_LEGENDROUNDRECT, RMC_COLOR_DEFAULT, 8, .F. )
+   oChart:AddLineSeries( nChartId, 1, { 300, 450, 400, 600, 550, 700, 650 }, 7, 0, 0, RMC_AREA, RMC_AREA_FLAT_GRADIENT_V, RMC_LSTYLE_LINE, .F., RMC_COLOR_CORN_FLOWER_BLUE, RMC_SYMBOL_NONE, 1, RMC_VLABEL_NONE, RMC_HATCHBRUSH_OFF )
+   oChart:AddLineSeries( nChartId, 1, { 150, 250, 350, 300, 400, 350, 450 }, 7, 0, 0, RMC_AREA, RMC_AREA_FLAT, RMC_LSTYLE_SPLINE, .T., RMC_COLOR_ORANGE, RMC_SYMBOL_NONE, 1, RMC_VLABEL_NONE, RMC_HATCHBRUSH_OFF )
+   oChart:AddLineSeries( nChartId, 1, { 100, 120, 200, 150, 220, 180, 260 }, 7, 0, 0, RMC_LINE, RMC_LINE_FLAT, RMC_LSTYLE_LINE_AREA, .F., RMC_COLOR_DARK_GREEN, RMC_SYMBOL_CIRCLE, 1, RMC_VLABEL_DEFAULT, RMC_HATCHBRUSH_OFF )
+
+   RETURN SaveChart( oChart, nChartId, cFile )
+
+STATIC FUNCTION ChartAreaStacked( cFile )
+
+   LOCAL nChartId, oChart := RMChartClass():New()
+
+   nChartId := oChart:GetChartId()
+   oChart:CreateChart( s_hParent, nChartId, 0, 0, CHART_WIDTH, CHART_HEIGHT, RMC_COLOR_WHITE, RMC_CTRLSTYLEFLAT, .T., "", "Tahoma", 0, RMC_COLOR_DEFAULT )
+   oChart:AddRegion( nChartId, 5, 5, -5, -5, "", .F. )
+   oChart:AddCaption( nChartId, 1, "Stacked areas", RMC_COLOR_DARK_SLATE_GRAY, RMC_COLOR_WHITE, 11, .T. )
+   oChart:AddGrid( nChartId, 1, RMC_COLOR_WHITE, .F., 0, 0, 0, 0, RMC_BICOLOR_NONE )
+   oChart:AddDataAxis( nChartId, 1, RMC_DATAAXISLEFT, 0, 0, 6, 8, RMC_COLOR_BLACK, RMC_COLOR_SILVER, RMC_LINESTYLEDOT, 0, "", "", "", RMC_TEXTCENTER )
+   oChart:AddLabelAxis( nChartId, 1, "Q1*Q2*Q3*Q4*Q5*Q6", 1, 6, RMC_LABELAXISBOTTOM, 8, RMC_COLOR_BLACK, RMC_TEXTCENTER, RMC_COLOR_BLACK, RMC_LINESTYLENONE, "" )
+   oChart:AddLegend( nChartId, 1, "North*South*East", RMC_LEGEND_RIGHT, RMC_COLOR_DEFAULT, RMC_LEGENDRECT, RMC_COLOR_DEFAULT, 8, .F. )
+   oChart:AddLineSeries( nChartId, 1, { 20, 25, 30, 28, 35, 40 }, 6, 0, 0, RMC_AREA_STACKED, RMC_AREA_FLAT, RMC_LSTYLE_LINE, .F., RMC_COLOR_DEFAULT, RMC_SYMBOL_NONE, 1, RMC_VLABEL_NONE, RMC_HATCHBRUSH_OFF )
+   oChart:AddLineSeries( nChartId, 1, { 15, 18, 12, 20, 22, 18 }, 6, 0, 0, RMC_AREA_STACKED, RMC_AREA_FLAT, RMC_LSTYLE_LINE, .F., RMC_COLOR_DEFAULT, RMC_SYMBOL_NONE, 1, RMC_VLABEL_NONE, RMC_HATCHBRUSH_OFF )
+   oChart:AddLineSeries( nChartId, 1, { 10, 12, 18, 15, 10, 20 }, 6, 0, 0, RMC_AREA_STACKED, RMC_AREA_FLAT, RMC_LSTYLE_LINE, .F., RMC_COLOR_DEFAULT, RMC_SYMBOL_NONE, 1, RMC_VLABEL_NONE, RMC_HATCHBRUSH_OFF )
+
+   RETURN SaveChart( oChart, nChartId, cFile )
+
+STATIC FUNCTION ChartBarLine( cFile )
+
+   LOCAL nChartId, oChart := RMChartClass():New()
+
+   nChartId := oChart:GetChartId()
+   oChart:CreateChart( s_hParent, nChartId, 0, 0, CHART_WIDTH, CHART_HEIGHT, RMC_COLOR_ALICE_BLUE, RMC_CTRLSTYLEFLAT, .T., "", "", 0, 0 )
+   oChart:AddRegion( nChartId, 5, 5, -5, -5, "", .F. )
+   oChart:AddCaption( nChartId, 1, "Bars on axis 1, line on axis 2", RMC_COLOR_TRANSPARENT, RMC_COLOR_BLACK, 11, .T. )
+   oChart:AddGrid( nChartId, 1, RMC_COLOR_ALICE_BLUE, .T., 0, 0, 0, 0, RMC_BICOLOR_NONE )
+   oChart:AddDataAxis( nChartId, 1, RMC_DATAAXISLEFT, 0, 250, 11, 8, RMC_COLOR_BLUE, RMC_COLOR_BLACK, RMC_LINESTYLESOLID, 0, "$", "DATAAXIS 1", "", RMC_TEXTCENTER )
+   oChart:AddDataAxis( nChartId, 1, RMC_DATAAXISRIGHT, 0, 50, 11, 8, RMC_COLOR_GREEN, RMC_COLOR_BLACK, RMC_LINESTYLESOLID, 0, "", "DATAAXIS 2", "", RMC_TEXTCENTER )
+   oChart:AddLabelAxis( nChartId, 1, "", 1, 10, RMC_LABELAXISBOTTOM, 8, RMC_COLOR_BLACK, RMC_TEXTCENTER, RMC_COLOR_BLACK, RMC_LINESTYLESOLID, "LABELAXIS" )
+   oChart:AddBarSeries( nChartId, 1, { 240, 230, 220, 180, 170, 160, 145, 130, 125, 115 }, 10, RMC_BARSINGLE, RMC_BAR_FLAT_GRADIENT2, .F., RMC_COLOR_GOLD, .F., 1, RMC_VLABEL_NONE, 1, RMC_HATCHBRUSH_OFF )
+   oChart:AddLineSeries( nChartId, 1, { 5, 7, 8, 18, 25, 32, 35, 38, 42, 45 }, 10, 0, 0, RMC_LINE, RMC_LINE_CABLE, RMC_LSTYLE_LINE, .F., RMC_COLOR_GREEN, RMC_SYMBOL_NONE, 2, RMC_VLABEL_DEFAULT, RMC_HATCHBRUSH_OFF )
+
+   RETURN SaveChart( oChart, nChartId, cFile )
+
+STATIC FUNCTION ChartLine3D( cFile )
+
+   LOCAL nChartId, oChart := RMChartClass():New()
+   LOCAL nW := Int( CHART_WIDTH / 2 )
+
+   nChartId := oChart:GetChartId()
+   oChart:CreateChart( s_hParent, nChartId, 0, 0, CHART_WIDTH, CHART_HEIGHT, RMC_COLOR_BISQUE, RMC_CTRLSTYLE3DLIGHT, .T., "", "Tahoma", 0, RMC_COLOR_DEFAULT )
+
+   oChart:AddRegion( nChartId, 5, 5, nW - 10, -5, "", .F. )
+   oChart:AddCaption( nChartId, 1, "3D area and 3D line", RMC_COLOR_BISQUE, RMC_COLOR_BLACK, 10, .T. )
+   oChart:AddGrid( nChartId, 1, RMC_COLOR_CORN_SILK, .F., 0, 0, 0, 0, RMC_BICOLOR_NONE )
+   oChart:AddDataAxis( nChartId, 1, RMC_DATAAXISLEFT, 0, 100, 11, 8, RMC_COLOR_BLACK, RMC_COLOR_BLACK, RMC_LINESTYLEDOT, 0, "", "", "", RMC_TEXTCENTER )
+   oChart:AddLabelAxis( nChartId, 1, "A*B*C*D*E*F", 1, 6, RMC_LABELAXISBOTTOM, 8, RMC_COLOR_BLACK, RMC_TEXTCENTER, RMC_COLOR_BLACK, RMC_LINESTYLENONE, "" )
+   oChart:AddLineSeries( nChartId, 1, { 30, 50, 40, 70, 60, 80 }, 6, 0, 0, RMC_AREA, RMC_AREA_3D_GRADIENT_V, RMC_LSTYLE_LINE, .F., RMC_COLOR_DARK_GREEN, RMC_SYMBOL_NONE, 1, RMC_VLABEL_NONE, RMC_HATCHBRUSH_OFF )
+   oChart:AddLineSeries( nChartId, 1, { 10, 25, 20, 35, 30, 45 }, 6, 0, 0, RMC_LINE, RMC_LINE_3D_GRADIENT, RMC_LSTYLE_LINE, .F., RMC_COLOR_MAROON, RMC_SYMBOL_NONE, 1, RMC_VLABEL_NONE, RMC_HATCHBRUSH_OFF )
+
+   oChart:AddRegion( nChartId, nW + 5, 5, -5, -5, "", .F. )
+   oChart:AddCaption( nChartId, 2, "Stair and symbols only", RMC_COLOR_BISQUE, RMC_COLOR_BLACK, 10, .T. )
+   oChart:AddGrid( nChartId, 2, RMC_COLOR_CORN_SILK, .F., 0, 0, 0, 0, RMC_BICOLOR_NONE )
+   oChart:AddDataAxis( nChartId, 2, RMC_DATAAXISLEFT, 0, 100, 11, 8, RMC_COLOR_BLACK, RMC_COLOR_BLACK, RMC_LINESTYLEDOT, 0, "", "", "", RMC_TEXTCENTER )
+   oChart:AddLabelAxis( nChartId, 2, "A*B*C*D*E*F", 1, 6, RMC_LABELAXISBOTTOM, 8, RMC_COLOR_BLACK, RMC_TEXTCENTER, RMC_COLOR_BLACK, RMC_LINESTYLENONE, "" )
+   oChart:AddLineSeries( nChartId, 2, { 20, 40, 35, 60, 55, 75 }, 6, 0, 0, RMC_LINE, RMC_LINE_FLAT, RMC_LSTYLE_STAIR_AREA, .F., RMC_COLOR_NAVY, RMC_SYMBOL_NONE, 1, RMC_VLABEL_NONE, RMC_HATCHBRUSH_OFF )
+   oChart:AddLineSeries( nChartId, 2, { 85, 70, 90, 80, 95, 88 }, 6, 0, 0, RMC_LINE, RMC_LINE_SYMBOLONLY, RMC_LSTYLE_LINE, .F., RMC_COLOR_CRIMSON, RMC_SYMBOL_SQUARE, 1, RMC_VLABEL_DEFAULT, RMC_HATCHBRUSH_OFF )
+
+   RETURN SaveChart( oChart, nChartId, cFile )
 
 STATIC FUNCTION ChartGroup( cFile )
 

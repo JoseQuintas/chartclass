@@ -86,6 +86,8 @@ CHC_GDIP_FUNC( GpStatus, GdipAddPathArc, ( GpPath *, REAL, REAL, REAL, REAL, REA
 CHC_GDIP_FUNC( GpStatus, GdipAddPathLine, ( GpPath *, REAL, REAL, REAL, REAL ) )
 CHC_GDIP_FUNC( GpStatus, GdipAddPathPie, ( GpPath *, REAL, REAL, REAL, REAL, REAL, REAL ) )
 CHC_GDIP_FUNC( GpStatus, GdipAddPathEllipse, ( GpPath *, REAL, REAL, REAL, REAL ) )
+CHC_GDIP_FUNC( GpStatus, GdipAddPathLine2, ( GpPath *, const CHC_POINTF *, INT ) )
+CHC_GDIP_FUNC( GpStatus, GdipAddPathCurve2, ( GpPath *, const CHC_POINTF *, INT, REAL ) )
 CHC_GDIP_FUNC( GpStatus, GdipClosePathFigure, ( GpPath * ) )
 CHC_GDIP_FUNC( GpStatus, GdipFillPath, ( GpGraphics *, GpBrush *, GpPath * ) )
 CHC_GDIP_FUNC( GpStatus, GdipDrawPath, ( GpGraphics *, GpPen *, GpPath * ) )
@@ -154,6 +156,8 @@ static const struct
    CHC_GDIP_ENTRY( GdipAddPathLine ),
    CHC_GDIP_ENTRY( GdipAddPathPie ),
    CHC_GDIP_ENTRY( GdipAddPathEllipse ),
+   CHC_GDIP_ENTRY( GdipAddPathLine2 ),
+   CHC_GDIP_ENTRY( GdipAddPathCurve2 ),
    CHC_GDIP_ENTRY( GdipClosePathFigure ),
    CHC_GDIP_ENTRY( GdipFillPath ),
    CHC_GDIP_ENTRY( GdipDrawPath ),
@@ -234,6 +238,55 @@ static const struct
 #define RMC_COLUMN_3D             8
 #define RMC_COLUMN_3D_GRADIENT    9
 #define RMC_COLUMN_FLUTED         10
+
+#define RMC_LINE                  21
+#define RMC_AREA                  22
+#define RMC_LINE_INDEXED          23
+#define RMC_AREA_INDEXED          24
+#define RMC_AREA_STACKED          25
+#define RMC_AREA_STACKED100       26
+
+#define RMC_LINE_FLAT_DASHDOTDOT  16
+#define RMC_LINE_FLAT_DASHDOT     17
+#define RMC_LINE_FLAT_DASH        18
+#define RMC_LINE_FLAT_DOT         19
+#define RMC_LINE_FLAT             21
+#define RMC_LINE_CABLE            22
+#define RMC_LINE_3D               23
+#define RMC_LINE_3D_GRADIENT      24
+#define RMC_AREA_FLAT             25
+#define RMC_AREA_FLAT_GRADIENT_V  26
+#define RMC_AREA_FLAT_GRADIENT_H  27
+#define RMC_AREA_FLAT_GRADIENT_C  28
+#define RMC_AREA_3D               29
+#define RMC_AREA_3D_GRADIENT_V    30
+#define RMC_AREA_3D_GRADIENT_H    31
+#define RMC_AREA_3D_GRADIENT_C    32
+#define RMC_LINE_CABLE_SHADOW     34
+#define RMC_LINE_SYMBOLONLY       35
+
+#define RMC_LSTYLE_LINE           1
+#define RMC_LSTYLE_SPLINE         2
+#define RMC_LSTYLE_STAIR          3
+#define RMC_LSTYLE_LINE_AREA      4
+#define RMC_LSTYLE_SPLINE_AREA    5
+#define RMC_LSTYLE_STAIR_AREA     6
+
+#define RMC_SYMBOL_NONE           0
+#define RMC_SYMBOL_ROUND          1
+#define RMC_SYMBOL_DIAMOND        2
+#define RMC_SYMBOL_SQUARE         3
+#define RMC_SYMBOL_STAR           4
+#define RMC_SYMBOL_ARROW_DOWN     5
+#define RMC_SYMBOL_ARROW_UP       6
+#define RMC_SYMBOL_POINT          7
+#define RMC_SYMBOL_CIRCLE         8
+#define RMC_SYMBOL_RECTANGLE      9
+#define RMC_SYMBOL_CROSS          10
+#define RMC_SYMBOL_ROUND_SMALL    11
+#define RMC_SYMBOL_CROSS_SMALL    20
+#define RMC_SYMBOL_BULLET         21
+#define RMC_SYMBOL_BULLET_SMALL   22
 
 #define RMC_PIE_FLAT              51
 #define RMC_PIE_GRADIENT          52
@@ -356,8 +409,12 @@ typedef struct
    int      nData;
    ARGB *   pColors;          /* colors by point, 0 = series color */
    int      nColors;
+   int *    pPPC;             /* line series, points per label column */
+   int      nPPC;
    int      iType;
    int      iStyle;
+   int      iLineStyle;
+   int      iSymbol;
    int      iAlign;
    int      iExplode;
    int      iVLabel;
@@ -744,6 +801,46 @@ static ARGB * chc_parcolors( int iParam, int * pnCount )
    return pData;
 }
 
+static int * chc_parints( int iParam, int * pnCount )
+{
+   int * pData = NULL;
+   int   nCount = *pnCount, n;
+
+   if( HB_ISARRAY( iParam ) )
+   {
+      PHB_ITEM pArray = hb_param( iParam, HB_IT_ARRAY );
+      int nLen = ( int ) hb_arrayLen( pArray );
+      if( nCount <= 0 || nCount > nLen )
+         nCount = nLen;
+      if( nCount > 0 )
+      {
+         pData = ( int * ) hb_xgrab( sizeof( int ) * nCount );
+         for( n = 0; n < nCount; n++ )
+            pData[ n ] = hb_arrayGetNI( pArray, n + 1 );
+      }
+   }
+   else if( HB_ISCHAR( iParam ) )
+   {
+      int nLen = ( int ) ( hb_parclen( iParam ) / 4 );
+      if( nCount <= 0 || nCount > nLen )
+         nCount = nLen;
+      if( nCount > 0 )
+      {
+         pData = ( int * ) hb_xgrab( sizeof( int ) * nCount );
+         memcpy( pData, hb_parc( iParam ), sizeof( int ) * nCount );
+      }
+   }
+   else if( HB_ISNUM( iParam ) && hb_parni( iParam ) > 1 )
+   {
+      nCount = 1;
+      pData = ( int * ) hb_xgrab( sizeof( int ) );
+      pData[ 0 ] = hb_parni( iParam );
+   }
+   *pnCount = pData ? nCount : 0;
+
+   return pData;
+}
+
 static HWND chc_parhwnd( int iParam )
 {
    if( HB_ISPOINTER( iParam ) )
@@ -1095,6 +1192,8 @@ static void chc_SeriesFree( CHC_SERIES * pSeries )
       hb_xfree( pSeries->pData );
    if( pSeries->pColors )
       hb_xfree( pSeries->pColors );
+   if( pSeries->pPPC )
+      hb_xfree( pSeries->pPPC );
    memset( pSeries, 0, sizeof( CHC_SERIES ) );
 }
 
@@ -1246,6 +1345,38 @@ static ARGB chc_PointColor( CHC_REGION * pRegion, int iSeries, int iPoint )
    if( pSeries->iKind == CHC_SER_GRIDLESS )
       return CHC_PALETTE( iPoint );
    return chc_SeriesColor( pRegion, iSeries );
+}
+
+/* label columns used by series, line series can have more points by column */
+static int chc_SeriesCats( CHC_SERIES * pSeries )
+{
+   if( pSeries->iKind != CHC_SER_LINE || pSeries->pPPC == NULL )
+      return pSeries->nData;
+   if( pSeries->nPPC == 1 )
+      return ( pSeries->nData + HB_MAX( pSeries->pPPC[ 0 ], 1 ) - 1 ) / HB_MAX( pSeries->pPPC[ 0 ], 1 );
+   return pSeries->nPPC;
+}
+
+/* position of point inside label axis, from grid start */
+static REAL chc_PointCat( CHC_SERIES * pSeries, int iPoint, REAL fCat )
+{
+   int n, nIn;
+
+   if( pSeries->pPPC == NULL )
+      return iPoint * fCat + fCat / 2;
+   if( pSeries->nPPC == 1 )
+   {
+      nIn = HB_MAX( pSeries->pPPC[ 0 ], 1 );
+      return ( iPoint / nIn ) * fCat + ( iPoint % nIn + 0.5f ) * fCat / nIn;
+   }
+   for( n = 0; n < pSeries->nPPC; n++ )
+   {
+      nIn = HB_MAX( pSeries->pPPC[ n ], 1 );
+      if( iPoint < nIn )
+         return n * fCat + ( iPoint + 0.5f ) * fCat / nIn;
+      iPoint -= nIn;
+   }
+   return ( n + iPoint ) * fCat + fCat / 2;
 }
 
 /* legend color for item n */
@@ -1789,12 +1920,541 @@ static void chc_BarsDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_GRIDINFO * pInf
    hb_xfree( pTotal );
 }
 
+/* ---------------------------------------------------------------- lines and areas */
+
+static HB_BOOL chc_LineIsStacked( CHC_SERIES * pSeries )
+{
+   return pSeries->iType == RMC_AREA_STACKED || pSeries->iType == RMC_AREA_STACKED100;
+}
+
+static HB_BOOL chc_LineIsArea( CHC_SERIES * pSeries )
+{
+   return pSeries->iType == RMC_AREA || pSeries->iType == RMC_AREA_INDEXED || chc_LineIsStacked( pSeries ) ||
+          ( pSeries->iStyle >= RMC_AREA_FLAT && pSeries->iStyle <= RMC_AREA_3D_GRADIENT_C );
+}
+
+static HB_BOOL chc_LineIs3D( CHC_SERIES * pSeries )
+{
+   return pSeries->iStyle == RMC_LINE_3D || pSeries->iStyle == RMC_LINE_3D_GRADIENT ||
+          ( pSeries->iStyle >= RMC_AREA_3D && pSeries->iStyle <= RMC_AREA_3D_GRADIENT_C );
+}
+
+static CHC_POINTF chc_LinePoint( CHC_GRIDINFO * pInfo, int iAxis, double dValue, REAL fPos )
+{
+   CHC_POINTF pt;
+
+   if( pInfo->lVertical )
+   {
+      pt.X = pInfo->grid.x + fPos;
+      pt.Y = chc_ValuePos( pInfo, iAxis, dValue );
+   }
+   else
+   {
+      pt.X = chc_ValuePos( pInfo, iAxis, dValue );
+      pt.Y = pInfo->grid.y + fPos;
+   }
+   return pt;
+}
+
+/* stair: each value is a step with the width of its column, pDest with 2 * n, n > 1 */
+static int chc_StairPoints( CHC_POINTF * pSrc, int n, CHC_POINTF * pDest, HB_BOOL lVertical )
+{
+   int i, nDest = 0;
+
+   for( i = 0; i < n; i++ )
+   {
+      REAL fPos   = lVertical ? pSrc[ i ].X : pSrc[ i ].Y;
+      REAL fPrev  = i > 0 ? ( lVertical ? pSrc[ i - 1 ].X : pSrc[ i - 1 ].Y ) : 0;
+      REAL fNext  = i < n - 1 ? ( lVertical ? pSrc[ i + 1 ].X : pSrc[ i + 1 ].Y ) : 0;
+      REAL fStart = i > 0 ? ( fPrev + fPos ) / 2 : fPos - ( fNext - fPos ) / 2;
+      REAL fEnd   = i < n - 1 ? ( fPos + fNext ) / 2 : fPos + ( fPos - fPrev ) / 2;
+
+      pDest[ nDest ] = pSrc[ i ];
+      pDest[ nDest + 1 ] = pSrc[ i ];
+      if( lVertical )
+      {
+         pDest[ nDest ].X     = fStart;
+         pDest[ nDest + 1 ].X = fEnd;
+      }
+      else
+      {
+         pDest[ nDest ].Y     = fStart;
+         pDest[ nDest + 1 ].Y = fEnd;
+      }
+      nDest += 2;
+   }
+   return nDest;
+}
+
+static void chc_PathPoints( GpPath * path, CHC_POINTF * pt, int n, HB_BOOL lSpline )
+{
+   if( n < 2 )
+      return;
+   if( lSpline )
+      pGdipAddPathCurve2( path, pt, n, 0.5f );
+   else
+      pGdipAddPathLine2( path, pt, n );
+}
+
+/* area between top and bottom points, both from left to right, moved by dx, dy */
+static GpPath * chc_AreaPath( CHC_POINTF * pTop, CHC_POINTF * pBottom, int n, HB_BOOL lSpline, REAL dx, REAL dy )
+{
+   GpPath * path = NULL;
+   CHC_POINTF * pt = ( CHC_POINTF * ) hb_xgrab( sizeof( CHC_POINTF ) * n );
+   int i;
+
+   pGdipCreatePath( GP_FILLALTERNATE, &path );
+   for( i = 0; i < n; i++ )
+   {
+      pt[ i ].X = pTop[ i ].X + dx;
+      pt[ i ].Y = pTop[ i ].Y + dy;
+   }
+   chc_PathPoints( path, pt, n, lSpline );
+   for( i = 0; i < n; i++ )
+   {
+      pt[ i ].X = pBottom[ n - 1 - i ].X + dx;
+      pt[ i ].Y = pBottom[ n - 1 - i ].Y + dy;
+   }
+   chc_PathPoints( path, pt, n, lSpline );
+   pGdipClosePathFigure( path );
+   hb_xfree( pt );
+   return path;
+}
+
+static GpBrush * chc_AreaBrush( ARGB color, int iStyle, CHC_POINTF * pTop, CHC_POINTF * pBottom, int n )
+{
+   GpBrush * brush = NULL;
+   CHC_RECTF rc;
+   REAL x1 = pTop[ 0 ].X, y1 = pTop[ 0 ].Y, x2 = x1, y2 = y1;
+   ARGB light = chc_Alpha( chc_Light( color, 0.6 ), ( int ) ( color >> 24 ) );
+   int i;
+
+   for( i = 0; i < n; i++ )
+   {
+      x1 = HB_MIN( x1, HB_MIN( pTop[ i ].X, pBottom[ i ].X ) );
+      x2 = HB_MAX( x2, HB_MAX( pTop[ i ].X, pBottom[ i ].X ) );
+      y1 = HB_MIN( y1, HB_MIN( pTop[ i ].Y, pBottom[ i ].Y ) );
+      y2 = HB_MAX( y2, HB_MAX( pTop[ i ].Y, pBottom[ i ].Y ) );
+   }
+   rc.X = x1 - 1; rc.Y = y1 - 1; rc.Width = x2 - x1 + 2; rc.Height = y2 - y1 + 2;
+   switch( iStyle )
+   {
+      case RMC_AREA_FLAT_GRADIENT_V:
+      case RMC_AREA_3D_GRADIENT_V:
+         pGdipCreateLineBrushFromRect( &rc, color, light, GP_GRADIENTVERTICAL, GP_WRAPTILEFLIPXY, &brush );
+         break;
+      case RMC_AREA_FLAT_GRADIENT_H:
+      case RMC_AREA_3D_GRADIENT_H:
+         pGdipCreateLineBrushFromRect( &rc, light, color, GP_GRADIENTHORIZONTAL, GP_WRAPTILEFLIPXY, &brush );
+         break;
+      case RMC_AREA_FLAT_GRADIENT_C:
+      case RMC_AREA_3D_GRADIENT_C:
+         pGdipCreateLineBrushFromRect( &rc, color, light, GP_GRADIENTVERTICAL, GP_WRAPTILEFLIPXY, &brush );
+         pGdipSetLineSigmaBlend( brush, 0.5f, 1.0f );
+         break;
+      default:
+         brush = chc_Solid( color );
+   }
+   return brush;
+}
+
+/* 3D ribbon over the line, segment by segment */
+static void chc_LineRibbon( CHC_DC * dc, CHC_POINTF * pt, int n, REAL fDepth, ARGB color, HB_BOOL lGradient )
+{
+   CHC_POINTF face[ 4 ];
+   GpBrush * brush;
+   GpPen * pen = chc_Pen( chc_Dark( color, 0.35 ), 1, RMC_LINESTYLESOLID );
+   int i;
+
+   for( i = 0; i < n - 1; i++ )
+   {
+      ARGB faceColor = chc_Light( color, 0.25 );
+      if( lGradient )
+         faceColor = pt[ i + 1 ].Y < pt[ i ].Y ? chc_Light( color, 0.45 ) : chc_Dark( color, 0.15 );
+      face[ 0 ] = pt[ i ];
+      face[ 1 ] = pt[ i + 1 ];
+      face[ 2 ].X = pt[ i + 1 ].X + fDepth; face[ 2 ].Y = pt[ i + 1 ].Y - fDepth;
+      face[ 3 ].X = pt[ i ].X + fDepth;     face[ 3 ].Y = pt[ i ].Y - fDepth;
+      brush = chc_Solid( faceColor );
+      pGdipFillPolygon( dc->g, brush, face, 4, GP_FILLALTERNATE );
+      pGdipDeleteBrush( brush );
+      pGdipDrawPolygon( dc->g, pen, face, 4 );
+   }
+   pGdipDeletePen( pen );
+}
+
+static void chc_FillPoly( CHC_DC * dc, CHC_POINTF * pt, int n, ARGB fill, ARGB border, REAL fWidth )
+{
+   GpBrush * brush;
+   GpPen * pen;
+
+   if( ! chc_IsTransparent( fill ) )
+   {
+      brush = chc_Solid( fill );
+      pGdipFillPolygon( dc->g, brush, pt, n, GP_FILLALTERNATE );
+      pGdipDeleteBrush( brush );
+   }
+   pen = chc_Pen( border, fWidth, RMC_LINESTYLESOLID );
+   pGdipSetPenLineJoin( pen, GP_LINEJOINROUND );
+   pGdipDrawPolygon( dc->g, pen, pt, n );
+   pGdipDeletePen( pen );
+}
+
+/* symbol on point, returns the half size */
+static REAL chc_Symbol( CHC_DC * dc, int iSymbol, REAL x, REAL y, ARGB color )
+{
+   CHC_POINTF pt[ 10 ];
+   GpBrush * brush;
+   GpPen * pen;
+   GpPath * path = NULL;
+   REAL r = 4.5f;
+   ARGB dark = chc_Dark( color, 0.4 );
+   int n;
+
+   if( iSymbol >= RMC_SYMBOL_ROUND_SMALL && iSymbol <= RMC_SYMBOL_CROSS_SMALL )
+   {
+      iSymbol -= 10;
+      r = 3;
+   }
+   else if( iSymbol == RMC_SYMBOL_BULLET_SMALL )
+   {
+      iSymbol = RMC_SYMBOL_BULLET;
+      r = 3;
+   }
+   switch( iSymbol )
+   {
+      case RMC_SYMBOL_BULLET:
+      {
+         ARGB surround = color;
+         INT  nCount = 1;
+         CHC_POINTF center;
+         pGdipCreatePath( GP_FILLALTERNATE, &path );
+         pGdipAddPathEllipse( path, x - r, y - r, r * 2, r * 2 );
+         brush = NULL;
+         pGdipCreatePathGradientFromPath( path, &brush );
+         pGdipSetPathGradientCenterColor( brush, chc_Light( color, 0.8 ) );
+         pGdipSetPathGradientSurroundColorsWithCount( brush, &surround, &nCount );
+         center.X = x - r / 3; center.Y = y - r / 3;
+         pGdipSetPathGradientCenterPoint( brush, &center );
+         pGdipFillPath( dc->g, brush, path );
+         pGdipDeleteBrush( brush );
+         pGdipDeletePath( path );
+         break;
+      }
+      case RMC_SYMBOL_ROUND:
+      case RMC_SYMBOL_POINT:
+      case RMC_SYMBOL_CIRCLE:
+         if( iSymbol == RMC_SYMBOL_POINT )
+            r = r / 2;
+         brush = chc_Solid( iSymbol == RMC_SYMBOL_CIRCLE ? 0xFFFFFFFF : color );
+         pGdipFillEllipse( dc->g, brush, x - r, y - r, r * 2, r * 2 );
+         pGdipDeleteBrush( brush );
+         pen = chc_Pen( iSymbol == RMC_SYMBOL_CIRCLE ? color : dark, iSymbol == RMC_SYMBOL_CIRCLE ? 2.0f : 1.0f, RMC_LINESTYLESOLID );
+         pGdipDrawEllipse( dc->g, pen, x - r, y - r, r * 2, r * 2 );
+         pGdipDeletePen( pen );
+         break;
+      case RMC_SYMBOL_DIAMOND:
+         r += 1;
+         pt[ 0 ].X = x;     pt[ 0 ].Y = y - r;
+         pt[ 1 ].X = x + r; pt[ 1 ].Y = y;
+         pt[ 2 ].X = x;     pt[ 2 ].Y = y + r;
+         pt[ 3 ].X = x - r; pt[ 3 ].Y = y;
+         chc_FillPoly( dc, pt, 4, color, dark, 1 );
+         break;
+      case RMC_SYMBOL_SQUARE:
+      case RMC_SYMBOL_RECTANGLE:
+         pt[ 0 ].X = x - r; pt[ 0 ].Y = y - r;
+         pt[ 1 ].X = x + r; pt[ 1 ].Y = y - r;
+         pt[ 2 ].X = x + r; pt[ 2 ].Y = y + r;
+         pt[ 3 ].X = x - r; pt[ 3 ].Y = y + r;
+         if( iSymbol == RMC_SYMBOL_RECTANGLE )
+            chc_FillPoly( dc, pt, 4, 0xFFFFFFFF, color, 2 );
+         else
+            chc_FillPoly( dc, pt, 4, color, dark, 1 );
+         break;
+      case RMC_SYMBOL_STAR:
+         for( n = 0; n < 10; n++ )
+         {
+            double dAngle = ( n * 36 - 90 ) * 3.14159265358979 / 180;
+            REAL   fR = ( n % 2 == 0 ) ? r * 1.4f : r * 0.6f;
+            pt[ n ].X = x + ( REAL ) ( cos( dAngle ) * fR );
+            pt[ n ].Y = y + ( REAL ) ( sin( dAngle ) * fR );
+         }
+         chc_FillPoly( dc, pt, 10, color, dark, 1 );
+         r *= 1.4f;
+         break;
+      case RMC_SYMBOL_ARROW_DOWN:
+      case RMC_SYMBOL_ARROW_UP:
+      {
+         REAL s = iSymbol == RMC_SYMBOL_ARROW_UP ? -1.0f : 1.0f;
+         r += 1;
+         pt[ 0 ].X = x - r; pt[ 0 ].Y = y - s * r * 0.8f;
+         pt[ 1 ].X = x + r; pt[ 1 ].Y = y - s * r * 0.8f;
+         pt[ 2 ].X = x;     pt[ 2 ].Y = y + s * r;
+         chc_FillPoly( dc, pt, 3, color, dark, 1 );
+         break;
+      }
+      case RMC_SYMBOL_CROSS:
+         pen = chc_Pen( color, 2, RMC_LINESTYLESOLID );
+         pGdipDrawLine( dc->g, pen, x - r, y - r, x + r, y + r );
+         pGdipDrawLine( dc->g, pen, x - r, y + r, x + r, y - r );
+         pGdipDeletePen( pen );
+         break;
+      default:
+         return 0;
+   }
+   return r;
+}
+
+static void chc_LineDraw( CHC_DC * dc, CHC_POINTF * pt, int n, HB_BOOL lSpline, ARGB color, int iStyle )
+{
+   GpPath * path = NULL;
+   GpPen * pen;
+   REAL fWidth = 2;
+   int  iDash = 0, i;
+
+   if( n < 2 )
+      return;
+   pGdipCreatePath( GP_FILLALTERNATE, &path );
+   chc_PathPoints( path, pt, n, lSpline );
+   switch( iStyle )
+   {
+      case RMC_LINE_FLAT_DOT:        iDash = 2; break;
+      case RMC_LINE_FLAT_DASH:       iDash = 1; break;
+      case RMC_LINE_FLAT_DASHDOT:    iDash = 3; break;
+      case RMC_LINE_FLAT_DASHDOTDOT: iDash = 4; break;
+      case RMC_LINE_CABLE:
+      case RMC_LINE_CABLE_SHADOW:    fWidth = 4; break;
+   }
+   if( iStyle == RMC_LINE_CABLE_SHADOW )
+   {
+      GpPath * shadow = NULL;
+      CHC_POINTF * pShadow = ( CHC_POINTF * ) hb_xgrab( sizeof( CHC_POINTF ) * n );
+      for( i = 0; i < n; i++ )
+      {
+         pShadow[ i ].X = pt[ i ].X + 3;
+         pShadow[ i ].Y = pt[ i ].Y + 3;
+      }
+      pGdipCreatePath( GP_FILLALTERNATE, &shadow );
+      chc_PathPoints( shadow, pShadow, n, lSpline );
+      pen = chc_Pen( 0x50000000, fWidth, RMC_LINESTYLESOLID );
+      pGdipSetPenLineJoin( pen, GP_LINEJOINROUND );
+      pGdipDrawPath( dc->g, pen, shadow );
+      pGdipDeletePen( pen );
+      pGdipDeletePath( shadow );
+      hb_xfree( pShadow );
+   }
+   pen = chc_Pen( color, fWidth, RMC_LINESTYLESOLID );
+   if( iDash )
+      pGdipSetPenDashStyle( pen, iDash );
+   pGdipSetPenLineJoin( pen, GP_LINEJOINROUND );
+   pGdipDrawPath( dc->g, pen, path );
+   pGdipDeletePen( pen );
+   if( iStyle == RMC_LINE_CABLE || iStyle == RMC_LINE_CABLE_SHADOW )
+   {
+      /* highlight of cable */
+      pen = chc_Pen( chc_Light( color, 0.55 ), 1, RMC_LINESTYLESOLID );
+      pGdipSetPenLineJoin( pen, GP_LINEJOINROUND );
+      pGdipDrawPath( dc->g, pen, path );
+      pGdipDeletePen( pen );
+   }
+   pGdipDeletePath( path );
+}
+
+/* lBack: areas, before the bars, else lines, symbols and value labels */
+static void chc_LinesDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_GRIDINFO * pInfo, HB_BOOL lBack )
+{
+   int  n, i, nMax = 0;
+   REAL fCat, fLength, fDepth;
+   double * pCum, * pTotal;
+
+   if( pInfo->nCat == 0 )
+      return;
+   for( n = 0; n < pRegion->nSeries; n++ )
+   {
+      if( pRegion->series[ n ].iKind == CHC_SER_LINE && ! pRegion->series[ n ].lHide )
+         nMax = HB_MAX( nMax, pRegion->series[ n ].nData );
+   }
+   if( nMax == 0 )
+      return;
+
+   fLength = pInfo->lVertical ? pInfo->grid.w : pInfo->grid.h;
+   fCat    = fLength / pInfo->nCat;
+   fDepth  = HB_MIN( fCat * 0.3f, 12 );
+
+   /* stacked areas */
+   pCum   = ( double * ) hb_xgrab( sizeof( double ) * nMax );
+   pTotal = ( double * ) hb_xgrab( sizeof( double ) * nMax );
+   for( i = 0; i < nMax; i++ )
+   {
+      pCum[ i ] = pTotal[ i ] = 0;
+      for( n = 0; n < pRegion->nSeries; n++ )
+      {
+         CHC_SERIES * pSeries = &pRegion->series[ n ];
+         if( pSeries->iKind == CHC_SER_LINE && ! pSeries->lHide && chc_LineIsStacked( pSeries ) && i < pSeries->nData )
+            pTotal[ i ] += fabs( pSeries->pData[ i ] );
+      }
+   }
+
+   for( n = 0; n < pRegion->nSeries; n++ )
+   {
+      CHC_SERIES * pSeries = &pRegion->series[ n ];
+      int  iAxis = ( pSeries->iAxis == 2 && pRegion->nDAxis > 1 ) ? 1 : 0;
+      int  nDecimals = pRegion->daxis[ iAxis ].lSet ? pRegion->daxis[ iAxis ].nDecimals : 0;
+      int  nPts = 0, nDraw;
+      int  iMode = ( pSeries->iLineStyle >= RMC_LSTYLE_LINE && pSeries->iLineStyle <= RMC_LSTYLE_STAIR_AREA ) ? ( pSeries->iLineStyle - 1 ) % 3 : 0;
+      HB_BOOL lSpline = ( iMode == 1 ), lStair = ( iMode == 2 );
+      HB_BOOL lArea   = chc_LineIsArea( pSeries );
+      HB_BOOL lLight  = ! lArea && pSeries->iLineStyle >= RMC_LSTYLE_LINE_AREA && pSeries->iLineStyle <= RMC_LSTYLE_STAIR_AREA;
+      HB_BOOL l3D     = chc_LineIs3D( pSeries );
+      ARGB    color   = chc_SeriesColor( pRegion, n );
+      CHC_POINTF * pTop, * pBottom, * pTopDraw, * pBottomDraw;
+      double  dSum = 0;
+
+      if( pSeries->iKind != CHC_SER_LINE || pSeries->lHide || pSeries->nData == 0 )
+         continue;
+
+      pTop    = ( CHC_POINTF * ) hb_xgrab( sizeof( CHC_POINTF ) * pSeries->nData );
+      pBottom = ( CHC_POINTF * ) hb_xgrab( sizeof( CHC_POINTF ) * pSeries->nData );
+      for( i = 0; i < pSeries->nData; i++ )
+      {
+         double dValue = pSeries->pData[ i ], dFrom, dTo;
+         REAL   fPos = chc_PointCat( pSeries, i, fCat );
+
+         dSum += fabs( dValue );
+         if( fPos > fLength )
+            break;
+         if( chc_LineIsStacked( pSeries ) )
+         {
+            if( pSeries->iType == RMC_AREA_STACKED100 )
+               dValue = pTotal[ i ] != 0 ? fabs( dValue ) * 100 / pTotal[ i ] : 0;
+            dFrom = pCum[ i ];
+            dTo   = pCum[ i ] += dValue;
+         }
+         else
+         {
+            dFrom = 0;
+            dTo   = dValue;
+         }
+         dFrom = HB_MAX( HB_MIN( dFrom, pInfo->dMax[ iAxis ] ), pInfo->dMin[ iAxis ] );
+         dTo   = HB_MAX( HB_MIN( dTo, pInfo->dMax[ iAxis ] ), pInfo->dMin[ iAxis ] );
+         pTop[ i ]    = chc_LinePoint( pInfo, iAxis, dTo, fPos );
+         pBottom[ i ] = chc_LinePoint( pInfo, iAxis, dFrom, fPos );
+         nPts++;
+      }
+      for( ; i < pSeries->nData; i++ )
+         dSum += fabs( pSeries->pData[ i ] );
+
+      /* stair adds points */
+      nDraw       = nPts;
+      pTopDraw    = pTop;
+      pBottomDraw = pBottom;
+      if( lStair && nPts > 1 )
+      {
+         pTopDraw    = ( CHC_POINTF * ) hb_xgrab( sizeof( CHC_POINTF ) * nPts * 2 );
+         pBottomDraw = ( CHC_POINTF * ) hb_xgrab( sizeof( CHC_POINTF ) * nPts * 2 );
+         nDraw = chc_StairPoints( pTop, nPts, pTopDraw, pInfo->lVertical );
+         chc_StairPoints( pBottom, nPts, pBottomDraw, pInfo->lVertical );
+      }
+
+      if( pSeries->lLucent )
+         color = chc_Alpha( color, 150 );
+
+      if( lBack && ( lArea || lLight ) && nDraw > 1 )
+      {
+         GpPath * path;
+         GpBrush * brush;
+         ARGB fill = lLight ? chc_Alpha( color, 60 ) : color;
+
+         if( l3D && lArea )
+         {
+            /* back side, then top */
+            path  = chc_AreaPath( pTopDraw, pBottomDraw, nDraw, lSpline, fDepth, -fDepth );
+            brush = chc_Solid( chc_Dark( fill, 0.3 ) );
+            pGdipFillPath( dc->g, brush, path );
+            pGdipDeleteBrush( brush );
+            pGdipDeletePath( path );
+            chc_LineRibbon( dc, pTopDraw, nDraw, fDepth, fill, HB_FALSE );
+         }
+         path  = chc_AreaPath( pTopDraw, pBottomDraw, nDraw, lSpline, 0, 0 );
+         brush = chc_AreaBrush( fill, lLight ? RMC_AREA_FLAT : pSeries->iStyle, pTopDraw, pBottomDraw, nDraw );
+         pGdipFillPath( dc->g, brush, path );
+         pGdipDeleteBrush( brush );
+         if( pSeries->iHatch == RMC_HATCHBRUSH_ON )
+         {
+            static const int s_hatch[] = { 4, 5, 2, 3, 0, 1, 8, 9 };
+            brush = NULL;
+            pGdipCreateHatchBrush( s_hatch[ n % 8 ], chc_Alpha( chc_Dark( color, 0.5 ), 140 ), 0x00FFFFFF, &brush );
+            pGdipFillPath( dc->g, brush, path );
+            pGdipDeleteBrush( brush );
+         }
+         pGdipDeletePath( path );
+         if( lArea )
+         {
+            /* border on top */
+            path = NULL;
+            pGdipCreatePath( GP_FILLALTERNATE, &path );
+            chc_PathPoints( path, pTopDraw, nDraw, lSpline );
+            {
+               GpPen * pen = chc_Pen( chc_Dark( chc_Alpha( color, 255 ), 0.35 ), 1, RMC_LINESTYLESOLID );
+               pGdipSetPenLineJoin( pen, GP_LINEJOINROUND );
+               pGdipDrawPath( dc->g, pen, path );
+               pGdipDeletePen( pen );
+            }
+            pGdipDeletePath( path );
+         }
+      }
+      else if( ! lBack )
+      {
+         int iSymbol = pSeries->iSymbol;
+
+         if( ! lArea && pSeries->iStyle != RMC_LINE_SYMBOLONLY )
+         {
+            if( l3D )
+               chc_LineRibbon( dc, pTopDraw, nDraw, fDepth, color, pSeries->iStyle == RMC_LINE_3D_GRADIENT );
+            else
+               chc_LineDraw( dc, pTopDraw, nDraw, lSpline, color, pSeries->iStyle );
+         }
+         if( pSeries->iStyle == RMC_LINE_SYMBOLONLY && iSymbol == RMC_SYMBOL_NONE )
+            iSymbol = RMC_SYMBOL_ROUND;
+         for( i = 0; i < nPts; i++ )
+         {
+            char szLabel[ 96 ];
+            REAL r = 0;
+
+            if( iSymbol != RMC_SYMBOL_NONE )
+               r = chc_Symbol( dc, iSymbol, pTop[ i ].X, pTop[ i ].Y, chc_Alpha( chc_PointColor( pRegion, n, i ), ( int ) ( color >> 24 ) ) );
+            chc_ValueText( pSeries, pSeries->pData[ i ], dSum, nDecimals, "", szLabel, sizeof( szLabel ) );
+            if( *szLabel )
+            {
+               REAL tw, th;
+               chc_TextSize( dc, szLabel, 7, HB_FALSE, &tw, &th );
+               if( pInfo->lVertical )
+                  chc_TextAngle( dc, szLabel, 7, HB_FALSE, 0xFF000000, pTop[ i ].X, pTop[ i ].Y - HB_MAX( r, 2 ) - th / 2 - 1, 0 );
+               else
+                  chc_TextAngle( dc, szLabel, 7, HB_FALSE, 0xFF000000, pTop[ i ].X + HB_MAX( r, 2 ) + tw / 2 + 2, pTop[ i ].Y, 0 );
+            }
+         }
+      }
+
+      if( pTopDraw != pTop )
+      {
+         hb_xfree( pTopDraw );
+         hb_xfree( pBottomDraw );
+      }
+      hb_xfree( pTop );
+      hb_xfree( pBottom );
+   }
+   hb_xfree( pCum );
+   hb_xfree( pTotal );
+}
+
 /* ---------------------------------------------------------------- grid and axis */
 
 static void chc_DataRange( CHC_REGION * pRegion, int iAxis, double * pLow, double * pHigh, HB_BOOL * pl100 )
 {
    int n, i, nMax = 0;
-   double * pPos, * pNeg;
+   double * pPos, * pNeg, * pArea;
 
    *pLow = 0;
    *pHigh = 0;
@@ -1805,15 +2465,17 @@ static void chc_DataRange( CHC_REGION * pRegion, int iAxis, double * pLow, doubl
       return;
    pPos = ( double * ) hb_xgrab( sizeof( double ) * nMax );
    pNeg = ( double * ) hb_xgrab( sizeof( double ) * nMax );
+   pArea = ( double * ) hb_xgrab( sizeof( double ) * nMax );
    for( i = 0; i < nMax; i++ )
-      pPos[ i ] = pNeg[ i ] = 0;
+      pPos[ i ] = pNeg[ i ] = pArea[ i ] = 0;
    for( n = 0; n < pRegion->nSeries; n++ )
    {
       CHC_SERIES * pSeries = &pRegion->series[ n ];
       int iSerAxis = ( pSeries->iAxis == 2 && pRegion->nDAxis > 1 ) ? 1 : 0;
       if( pSeries->iKind == CHC_SER_GRIDLESS || pSeries->lHide || iSerAxis != iAxis )
          continue;
-      if( pSeries->iType == RMC_BARSTACKED100 && pSeries->iKind == CHC_SER_BAR )
+      if( ( pSeries->iType == RMC_BARSTACKED100 && pSeries->iKind == CHC_SER_BAR ) ||
+          ( pSeries->iType == RMC_AREA_STACKED100 && pSeries->iKind == CHC_SER_LINE ) )
          *pl100 = HB_TRUE;
       for( i = 0; i < pSeries->nData; i++ )
       {
@@ -1828,6 +2490,12 @@ static void chc_DataRange( CHC_REGION * pRegion, int iAxis, double * pLow, doubl
             *pHigh = HB_MAX( *pHigh, pPos[ i ] );
             *pLow  = HB_MIN( *pLow, pNeg[ i ] );
          }
+         else if( pSeries->iKind == CHC_SER_LINE && pSeries->iType == RMC_AREA_STACKED )
+         {
+            pArea[ i ] += d;
+            *pHigh = HB_MAX( *pHigh, pArea[ i ] );
+            *pLow  = HB_MIN( *pLow, pArea[ i ] );
+         }
          else
          {
             *pHigh = HB_MAX( *pHigh, d );
@@ -1837,6 +2505,7 @@ static void chc_DataRange( CHC_REGION * pRegion, int iAxis, double * pLow, doubl
    }
    hb_xfree( pPos );
    hb_xfree( pNeg );
+   hb_xfree( pArea );
 }
 
 static void chc_AxisLabel( CHC_DAXIS * pAxis, double dMin, double dMax, int iTick, char * szDest, int iSize )
@@ -1926,7 +2595,7 @@ static void chc_GridDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_BOX * pArea )
    for( n = 0; n < pRegion->nSeries; n++ )
    {
       if( pRegion->series[ n ].iKind != CHC_SER_GRIDLESS )
-         info.nCat = HB_MAX( info.nCat, pRegion->series[ n ].nData );
+         info.nCat = HB_MAX( info.nCat, chc_SeriesCats( &pRegion->series[ n ] ) );
    }
    if( info.nCat == 0 && pLA->lSet )
       info.nCat = chc_ListCount( pLA->szLabels );
@@ -2011,7 +2680,8 @@ static void chc_GridDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_BOX * pArea )
       for( n = 0; n < pRegion->nSeries; n++ )
       {
          int iStyle = pRegion->series[ n ].iStyle;
-         if( pRegion->series[ n ].iKind == CHC_SER_BAR && ( iStyle == RMC_BAR_3D || iStyle == RMC_BAR_3D_GRADIENT || iStyle >= RMC_COLUMN_3D ) )
+         if( ( pRegion->series[ n ].iKind == CHC_SER_BAR && ( iStyle == RMC_BAR_3D || iStyle == RMC_BAR_3D_GRADIENT || iStyle >= RMC_COLUMN_3D ) ) ||
+             ( pRegion->series[ n ].iKind == CHC_SER_LINE && chc_LineIs3D( &pRegion->series[ n ] ) ) )
          {
             fTop   = HB_MAX( fTop, 16 );
             fRight = HB_MAX( fRight, 16 );
@@ -2207,7 +2877,9 @@ static void chc_GridDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_BOX * pArea )
       }
    }
 
+   chc_LinesDraw( dc, pRegion, &info, HB_TRUE );    /* areas, behind bars */
    chc_BarsDraw( dc, pRegion, &info );
+   chc_LinesDraw( dc, pRegion, &info, HB_FALSE );   /* lines, symbols and labels */
 
    if( pRegion->legend.lSet && ! pRegion->legend.lHide && chc_LegendIsFloat( pRegion->legend.iAlign ) )
       chc_LegendFloat( dc, pRegion, &info.grid );
@@ -3154,6 +3826,34 @@ HB_FUNC( RMC_ADDGRIDLESSSERIES )
    hb_retni( iResult );
 }
 
+/* RMC_AddLineSeries( nCtrlId, nRegion, aData, nDataCount, aPPC, nPPCCount, nType, nStyle, nLineStyle, lLucent, nColor, nSymbol, nWhichDataAxis, nValueLabel, nHatchMode ) */
+HB_FUNC( RMC_ADDLINESERIES )
+{
+   int iResult;
+   CHC_SERIES * pSeries = chc_SeriesNew( &iResult );
+
+   if( pSeries )
+   {
+      pSeries->iKind      = CHC_SER_LINE;
+      pSeries->nData      = hb_parni( 4 );
+      pSeries->pData      = chc_pardoubles( 3, &pSeries->nData );
+      pSeries->nPPC       = hb_parni( 6 );
+      pSeries->pPPC       = chc_parints( 5, &pSeries->nPPC );
+      pSeries->iType      = hb_parni( 7 ) > 0 ? hb_parni( 7 ) : RMC_LINE;
+      pSeries->iStyle     = hb_parni( 8 ) > 0 ? hb_parni( 8 ) : RMC_LINE_FLAT;
+      pSeries->iLineStyle = hb_parni( 9 ) > 0 ? hb_parni( 9 ) : RMC_LSTYLE_LINE;
+      pSeries->lLucent    = chc_parl( 10 );
+      pSeries->color      = chc_parcolor( 11 );
+      pSeries->iSymbol    = hb_parni( 12 );
+      pSeries->iAxis      = hb_parni( 13 );
+      pSeries->iVLabel    = hb_parni( 14 );
+      pSeries->iHatch     = hb_parni( 15 );
+      if( pSeries->nData == 0 )
+         iResult = RMC_ERROR_NODATA;
+   }
+   hb_retni( iResult );
+}
+
 /* not drawn yet, kept for legend and data range */
 static void chc_SeriesOther( int iKind )
 {
@@ -3168,7 +3868,6 @@ static void chc_SeriesOther( int iKind )
    hb_retni( iResult );
 }
 
-HB_FUNC( RMC_ADDLINESERIES )       { chc_SeriesOther( CHC_SER_OTHER ); }
 HB_FUNC( RMC_ADDXYSERIES )         { chc_SeriesOther( CHC_SER_OTHER ); }
 HB_FUNC( RMC_ADDHIGHLOWSERIES )    { chc_SeriesOther( CHC_SER_OTHER ); }
 HB_FUNC( RMC_ADDVOLUMEBARSERIES )  { chc_SeriesOther( CHC_SER_OTHER ); }
