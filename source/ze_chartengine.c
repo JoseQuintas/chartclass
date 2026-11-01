@@ -1007,6 +1007,21 @@ static void chc_FillGradient( CHC_DC * dc, ARGB c1, ARGB c2, REAL x, REAL y, REA
    pGdipDeleteBrush( brush );
 }
 
+/* gradient c1 -> c2 -> c1, the c2 peak at fFocus (0 to 1) */
+static void chc_FillGradientFocus( CHC_DC * dc, ARGB c1, ARGB c2, REAL x, REAL y, REAL w, REAL h, HB_BOOL lVertical, REAL fFocus )
+{
+   GpBrush * brush = NULL;
+   CHC_RECTF rc;
+
+   if( w <= 0 || h <= 0 )
+      return;
+   rc.X = x - 1; rc.Y = y - 1; rc.Width = w + 2; rc.Height = h + 2;
+   pGdipCreateLineBrushFromRect( &rc, c1, c2, lVertical ? GP_GRADIENTVERTICAL : GP_GRADIENTHORIZONTAL, GP_WRAPTILEFLIPXY, &brush );
+   pGdipSetLineSigmaBlend( brush, fFocus, 1.0f );
+   pGdipFillRectangle( dc->g, brush, x, y, w, h );
+   pGdipDeleteBrush( brush );
+}
+
 static void chc_DrawRect( CHC_DC * dc, ARGB color, REAL x, REAL y, REAL w, REAL h )
 {
    GpPen * pen;
@@ -1686,7 +1701,8 @@ static void chc_BarDraw( CHC_DC * dc, CHC_BOX * pBar, ARGB color, int iStyle, HB
          break;
 
       case RMC_COLUMN_FLAT:
-         chc_FillRect( dc, color, x, y, w, h );
+         chc_FillGradientFocus( dc, chc_Dark( color, 0.1 ), chc_Light( color, 0.75 ), x, y, w, h, lHorizontal, 0.35f );
+         chc_DrawRect( dc, chc_Dark( color, 0.25 ), x, y, w, h );
          break;
 
       case RMC_BAR_3D:
@@ -2737,6 +2753,50 @@ static void chc_AxisLabel( CHC_DAXIS * pAxis, double dMin, double dMax, int iTic
    chc_FormatValue( dMin + ( dMax - dMin ) * iTick / ( nTicks - 1 ), pAxis->nDecimals, pAxis->szUnit, szDest, iSize );
 }
 
+/* label longer than the category: break in lines, on space if possible, or on the character, like RMChart */
+static void chc_LabelWrap( CHC_DC * dc, const char * szText, int iSize, REAL fMax, char * szDest, int iDest )
+{
+   REAL tw, th;
+   int  nLen = ( int ) strlen( szText ), nPos = 0, nOut = 0, nLine, nBreak, n;
+   char szLine[ 256 ];
+
+   chc_TextSize( dc, szText, iSize, HB_FALSE, &tw, &th );
+   if( tw <= fMax || fMax < 4 )
+   {
+      hb_strncpy( szDest, szText, iDest - 1 );
+      return;
+   }
+   while( nPos < nLen && nOut < iDest - 2 )
+   {
+      /* the longest piece that fits, at least one character */
+      nLine = 0;
+      nBreak = 0;
+      for( n = nPos + 1; n <= nLen && n - nPos < ( int ) sizeof( szLine ); n++ )
+      {
+         if( n < nLen && ( ( unsigned char ) szText[ n ] & 0xC0 ) == 0x80 )
+            continue; /* inside a UTF-8 character */
+         memcpy( szLine, szText + nPos, n - nPos );
+         szLine[ n - nPos ] = '\0';
+         chc_TextSize( dc, szLine, iSize, HB_FALSE, &tw, &th );
+         if( tw > fMax && nLine > 0 )
+            break;
+         nLine = n - nPos;
+         if( n < nLen && szText[ n ] == ' ' )
+            nBreak = nLine;
+      }
+      if( nPos + nLine < nLen && nBreak > 0 )
+         nLine = nBreak;
+      if( nOut > 0 )
+         szDest[ nOut++ ] = '\n';
+      for( n = 0; n < nLine && nOut < iDest - 1; n++ )
+         szDest[ nOut++ ] = szText[ nPos + n ];
+      nPos += nLine;
+      while( nPos < nLen && szText[ nPos ] == ' ' )
+         nPos++;
+   }
+   szDest[ nOut ] = '\0';
+}
+
 static REAL chc_LabelAngle( int iTextAlign )
 {
    if( iTextAlign == RMC_TEXTDOWNWARD )
@@ -2858,11 +2918,19 @@ static void chc_GridDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_BOX * pArea )
    if( pLA->lSet )
    {
       REAL fAngle = chc_LabelAngle( pLA->iTextAlign );
+      HB_BOOL lWrap = fAngle == 0 && ( pLA->iAlign == RMC_LABELAXISTOP || pLA->iAlign == RMC_LABELAXISBOTTOM );
+      REAL fCatW = info.nCat > 0 ? ( pArea->w - fLeft - fRight - 16 ) / info.nCat - 2 : 0;
       fMaxW = 0;
       fMaxH = 0;
       for( i = 0; i < info.nCat; i++ )
       {
          chc_ListItem( pLA->szLabels, i, szText, sizeof( szText ) );
+         if( lWrap )
+         {
+            char szWrap[ 256 ];
+            chc_LabelWrap( dc, szText, pLA->iFontSize, fCatW, szWrap, sizeof( szWrap ) );
+            hb_strncpy( szText, szWrap, sizeof( szText ) - 1 );
+         }
          chc_TextSize( dc, szText, pLA->iFontSize, HB_FALSE, &tw, &th );
          if( fAngle != 0 )
          {
@@ -2981,6 +3049,12 @@ static void chc_GridDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_BOX * pArea )
          chc_ListItem( pLA->szLabels, i, szText, sizeof( szText ) );
          if( *szText == '\0' )
             continue;
+         if( fAngle == 0 && ( pLA->iAlign == RMC_LABELAXISTOP || pLA->iAlign == RMC_LABELAXISBOTTOM ) )
+         {
+            char szWrap[ 256 ];
+            chc_LabelWrap( dc, szText, pLA->iFontSize, fCat - 2, szWrap, sizeof( szWrap ) );
+            hb_strncpy( szText, szWrap, sizeof( szText ) - 1 );
+         }
          chc_TextSize( dc, szText, pLA->iFontSize, HB_FALSE, &tw, &th );
          if( fAngle != 0 )
          {
@@ -4441,6 +4515,7 @@ static void chc_CreateChart( HB_BOOL lOnDC )
 {
    int iId = hb_parni( 2 ), n, iResult;
    CHC_CHART * pChart;
+   HWND hWndParent;
 
    iResult = chc_GdipStartup();
    if( iResult != RMC_NO_ERROR )
@@ -4492,6 +4567,15 @@ static void chc_CreateChart( HB_BOOL lOnDC )
          return;
       }
       SetWindowLongPtrW( pChart->hWnd, GWLP_USERDATA, ( LONG_PTR ) pChart );
+      /* parent windows painting, like a console GT, must not paint over the chart */
+      for( hWndParent = pChart->hParent; hWndParent; hWndParent = GetParent( hWndParent ) )
+      {
+         LONG_PTR nStyle = GetWindowLongPtrW( hWndParent, GWL_STYLE );
+         if( ! ( nStyle & WS_CLIPCHILDREN ) )
+            SetWindowLongPtrW( hWndParent, GWL_STYLE, nStyle | WS_CLIPCHILDREN );
+         if( ! ( nStyle & WS_CHILD ) )
+            break;
+      }
    }
    hb_retni( RMC_NO_ERROR );
 }
