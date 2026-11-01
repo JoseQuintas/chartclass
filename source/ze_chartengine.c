@@ -68,6 +68,7 @@ CHC_GDIP_FUNC( GpStatus, GdipCreatePathGradientFromPath, ( const GpPath *, GpBru
 CHC_GDIP_FUNC( GpStatus, GdipSetPathGradientCenterColor, ( GpBrush *, ARGB ) )
 CHC_GDIP_FUNC( GpStatus, GdipSetPathGradientSurroundColorsWithCount, ( GpBrush *, const ARGB *, INT * ) )
 CHC_GDIP_FUNC( GpStatus, GdipSetPathGradientCenterPoint, ( GpBrush *, const CHC_POINTF * ) )
+CHC_GDIP_FUNC( GpStatus, GdipSetPathGradientPresetBlend, ( GpBrush *, const ARGB *, const REAL *, INT ) )
 CHC_GDIP_FUNC( GpStatus, GdipDeleteBrush, ( GpBrush * ) )
 CHC_GDIP_FUNC( GpStatus, GdipCreatePen1, ( ARGB, REAL, int, GpPen ** ) )
 CHC_GDIP_FUNC( GpStatus, GdipSetPenDashStyle, ( GpPen *, int ) )
@@ -142,6 +143,7 @@ static const struct
    CHC_GDIP_ENTRY( GdipSetPathGradientCenterColor ),
    CHC_GDIP_ENTRY( GdipSetPathGradientSurroundColorsWithCount ),
    CHC_GDIP_ENTRY( GdipSetPathGradientCenterPoint ),
+   CHC_GDIP_ENTRY( GdipSetPathGradientPresetBlend ),
    CHC_GDIP_ENTRY( GdipDeleteBrush ),
    CHC_GDIP_ENTRY( GdipCreatePen1 ),
    CHC_GDIP_ENTRY( GdipSetPenDashStyle ),
@@ -614,8 +616,9 @@ static char        s_szThousand[ 8 ]  = ".";
 static char        s_szSuffix[ 32 ]   = "";
 
 /* default colors, by series or by slice */
+/* first five as the RMChart defaults: cornflower blue, light green, salmon, yellow, sandy brown */
 static const ARGB s_palette[] = {
-   0xFF2F6EBA, 0xFF3FA34D, 0xFFD2483C, 0xFFE8A030, 0xFF8E5BB5, 0xFF1BA3A8,
+   0xFF6495ED, 0xFF90EE90, 0xFFFA8072, 0xFFFFFF00, 0xFFF4A460, 0xFF1BA3A8,
    0xFFD35F9C, 0xFF7A8B99, 0xFF6B8E23, 0xFF4A4A8F, 0xFFB5651D, 0xFF5DADE2 };
 
 #define CHC_PALETTE( n )  s_palette[ ( n ) % ( sizeof( s_palette ) / sizeof( ARGB ) ) ]
@@ -3940,13 +3943,28 @@ static void chc_GridlessDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_SERIES * pS
          CHC_POINTF center;
          ARGB surround = pSlice->color;
          INT  nCount = 1;
+         /* from the border to the center: light edge, dark ring, color, light center */
+         ARGB aBlend[ 4 ];
+         REAL aPos[ 4 ] = { 0.0f, 0.07f, 0.35f, 1.0f };
          pGdipCreatePath( GP_FILLALTERNATE, &ellPath );
          pGdipAddPathEllipse( ellPath, x, y, ell.w, ell.h );
          pGdipCreatePathGradientFromPath( ellPath, &brush );
-         pGdipSetPathGradientCenterColor( brush, chc_Light( pSlice->color, 0.6 ) );
+         pGdipSetPathGradientCenterColor( brush, chc_Light( pSlice->color, 0.7 ) );
          pGdipSetPathGradientSurroundColorsWithCount( brush, &surround, &nCount );
-         center.X = x + ell.w * 0.4f;
-         center.Y = y + ell.h * 0.35f;
+         aBlend[ 0 ] = chc_Light( pSlice->color, 0.35 );
+         aBlend[ 1 ] = chc_Dark( pSlice->color, 0.25 );
+         aBlend[ 2 ] = pSlice->color;
+         aBlend[ 3 ] = chc_Light( pSlice->color, 0.7 );
+         if( lDonut && ell.w > 0 )
+         {
+            /* light in the middle of the ring, the center is a hole */
+            aPos[ 2 ] = ( 1.0f - inner.w / ell.w ) * 0.5f;
+            aBlend[ 2 ] = chc_Light( pSlice->color, 0.6 );
+            aBlend[ 3 ] = pSlice->color;
+         }
+         pGdipSetPathGradientPresetBlend( brush, aBlend, aPos, 4 );
+         center.X = x + ell.w * 0.5f;
+         center.Y = y + ell.h * 0.5f;
          pGdipSetPathGradientCenterPoint( brush, &center );
          pGdipDeletePath( ellPath );
       }
