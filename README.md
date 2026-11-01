@@ -28,7 +28,7 @@ Phase 1, work in progress.
 | Pie and donut: flat, gradient, 3D, full and half, explode | done |
 | Watermark | done |
 | `Draw2File()` to PNG, JPG, BMP, GIF | basic |
-| Line and area series | next |
+| Line and area series: line, area, stacked, stacked 100%, spline, stair, 3D, cable, symbols | done |
 | Printer, clipboard | next |
 | XY, high-low, volume bars, pyramid | next |
 | Custom objects (`RMC_CO*`), tooltips, zoom | next |
