@@ -3502,64 +3502,118 @@ static CHC_POINTF chc_EdgePoint( CHC_POINTF * pBase, CHC_POINTF * pApex, double 
    return pt;
 }
 
-/* first value at the bottom, height of layer by value */
+/* text of layer: legend item when legend on labels, and value */
+static void chc_PyramidText( CHC_REGION * pRegion, CHC_SERIES * pSeries, int n, double dTotal, HB_BOOL lOnLabels, char * szText, int iSize )
+{
+   char szValue[ 96 ];
+
+   *szText = '\0';
+   if( lOnLabels )
+      chc_ListItem( pRegion->legend.szText, n, szText, iSize );
+   chc_ValueText( pSeries, pSeries->pData[ n ], dTotal, chc_Decimals( pSeries->pData[ n ] ), "", szValue, sizeof( szValue ) );
+   if( *szValue )
+      hb_strncat( hb_strncat( szText, *szText ? " " : "", iSize - 1 ), szValue, iSize - 1 );
+}
+
+/*
+first value at the bottom, height of layer by value
+3D: square base seen from the front, front face lighter and both side faces darker
+labels inside the layer, outside at right when the layer is small
+*/
 static void chc_PyramidDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_SERIES * pSeries, double dTotal, CHC_BOX * pArea )
 {
-   int  n, nData = pSeries->nData, iSeries = ( int ) ( pSeries - pRegion->series );
+   int  n, nData = pSeries->nData, iSeries = ( int ) ( pSeries - pRegion->series ), iPass;
    HB_BOOL l3D = ( pSeries->iStyle == RMC_PYRAMIDE3 );
    HB_BOOL lOnLabels = pRegion->legend.lSet && ! pRegion->legend.lHide && pRegion->legend.iAlign == RMC_LEGEND_ONVLABELS;
-   REAL fLabel = 0, tw, th, fW, fH, fDepth, cx, yTop, yBase;
-   CHC_POINTF apex, baseL, baseF, baseR, pt[ 4 ];
-   char szText[ 256 ], szValue[ 96 ];
-   double dCum = 0;
+   REAL fReduce = 0, tw, th, fW = 0, fH, fDepth = 0, cx, yTop, yBase = 0;
+   CHC_POINTF apex, baseL, baseFL, baseFR, baseR, pt[ 4 ];
+   char szText[ 256 ];
+   double dCum;
 
-   for( n = 0; n < nData; n++ )
+   fH = pArea->h - 8;
+   cx = pArea->x + pArea->w / 2;
+   yTop = pArea->y + 4;
+   apex.X = cx;
+   apex.Y = yTop;
+
+   /* full width, reduced only by the labels outside that do not fit */
+   for( iPass = 0; iPass < 4; iPass++ )
    {
-      *szText = '\0';
-      if( lOnLabels )
-         chc_ListItem( pRegion->legend.szText, n, szText, sizeof( szText ) );
-      chc_ValueText( pSeries, pSeries->pData[ n ], dTotal, chc_Decimals( pSeries->pData[ n ] ), "", szValue, sizeof( szValue ) );
-      if( *szValue )
-         hb_strncat( hb_strncat( szText, *szText ? " " : "", sizeof( szText ) - 1 ), szValue, sizeof( szText ) - 1 );
-      chc_TextSize( dc, szText, 8, HB_FALSE, &tw, &th );
-      fLabel = HB_MAX( fLabel, tw );
-   }
-   fH = pArea->h - 20;
-   fW = pArea->w - 2 * ( fLabel + 16 );
-   fW = HB_MIN( fW, fH * 1.1f );
-   if( fW < 10 || fH < 10 )
-      return;
-   fDepth = l3D ? fW * 0.15f : 0;
-   cx     = pArea->x + pArea->w / 2;
-   yTop   = pArea->y + 10;
-   yBase  = yTop + fH - fDepth;
-   apex.X  = cx;                    apex.Y  = yTop;
-   baseL.X = cx - fW / 2;           baseL.Y = yBase;
-   baseR.X = cx + fW / 2;           baseR.Y = yBase;
-   baseF.X = cx - fW * 0.1f;        baseF.Y = yBase + fDepth;
+      REAL fOver = 0;
 
+      fW = pArea->w - 8 - fReduce;
+      if( fW < 10 || fH < 10 )
+         return;
+      fDepth = l3D ? HB_MIN( fW * 0.10f, fH * 0.12f ) : 0;
+      yBase  = yTop + fH - fDepth;
+      dCum = 0;
+      for( n = 0; n < nData; n++ )
+      {
+         double t0 = dCum / dTotal, t1 = ( dCum + fabs( pSeries->pData[ n ] ) ) / dTotal;
+         /* width of front face at middle of layer, height of layer */
+         REAL fMidW = ( REAL ) ( ( l3D ? fW * 0.5f : fW ) * ( 1 - ( t0 + t1 ) / 2 ) );
+         REAL fLayerH = ( REAL ) ( ( yBase - yTop ) * ( t1 - t0 ) );
+
+         dCum += fabs( pSeries->pData[ n ] );
+         chc_PyramidText( pRegion, pSeries, n, dTotal, lOnLabels, szText, sizeof( szText ) );
+         if( *szText == '\0' )
+            continue;
+         chc_TextSize( dc, szText, 8, HB_FALSE, &tw, &th );
+         if( tw + 8 > fMidW || th + 2 > fLayerH )
+         {
+            REAL fRight = cx + ( REAL ) ( fW / 2 * ( 1 - ( t0 + t1 ) / 2 ) ) + 10 + tw;
+            fOver = HB_MAX( fOver, fRight - ( pArea->x + pArea->w - 2 ) );
+         }
+      }
+      if( fOver <= 0 )
+         break;
+      fReduce += 2 * fOver;
+   }
+
+   baseL.X  = cx - fW / 2;         baseL.Y  = yBase;
+   baseR.X  = cx + fW / 2;         baseR.Y  = yBase;
+   baseFL.X = cx - ( l3D ? fW * 0.25f : fW / 2 ); baseFL.Y = yBase + fDepth;
+   baseFR.X = cx + ( l3D ? fW * 0.25f : fW / 2 ); baseFR.Y = yBase + fDepth;
+
+   dCum = 0;
    for( n = 0; n < nData; n++ )
    {
       double t0 = dCum / dTotal, t1 = ( dCum + fabs( pSeries->pData[ n ] ) ) / dTotal;
       ARGB   color = chc_PointColor( pRegion, iSeries, n );
-      CHC_POINTF ptLabel;
+      CHC_POINTF ptL, ptR;
+      REAL   fMidW, fLayerH, yMid;
 
       dCum += fabs( pSeries->pData[ n ] );
       if( pSeries->lLucent )
          color = chc_Alpha( color, 170 );
       if( l3D )
       {
-         /* left face, right face darker */
+         ARGB side = chc_Dark( color, 0.3 );
          pt[ 0 ] = chc_EdgePoint( &baseL, &apex, t0 );
-         pt[ 1 ] = chc_EdgePoint( &baseF, &apex, t0 );
-         pt[ 2 ] = chc_EdgePoint( &baseF, &apex, t1 );
+         pt[ 1 ] = chc_EdgePoint( &baseFL, &apex, t0 );
+         pt[ 2 ] = chc_EdgePoint( &baseFL, &apex, t1 );
          pt[ 3 ] = chc_EdgePoint( &baseL, &apex, t1 );
-         chc_FillPoly( dc, pt, 4, chc_Light( color, 0.15 ), chc_Dark( color, 0.4 ), 1 );
-         pt[ 0 ] = chc_EdgePoint( &baseF, &apex, t0 );
+         chc_FillPoly( dc, pt, 4, side, side, 1 );
+         pt[ 0 ] = chc_EdgePoint( &baseFR, &apex, t0 );
          pt[ 1 ] = chc_EdgePoint( &baseR, &apex, t0 );
          pt[ 2 ] = chc_EdgePoint( &baseR, &apex, t1 );
-         pt[ 3 ] = chc_EdgePoint( &baseF, &apex, t1 );
-         chc_FillPoly( dc, pt, 4, chc_Dark( color, 0.25 ), chc_Dark( color, 0.4 ), 1 );
+         pt[ 3 ] = chc_EdgePoint( &baseFR, &apex, t1 );
+         chc_FillPoly( dc, pt, 4, side, side, 1 );
+         pt[ 0 ] = chc_EdgePoint( &baseFL, &apex, t0 );
+         pt[ 1 ] = chc_EdgePoint( &baseFR, &apex, t0 );
+         pt[ 2 ] = chc_EdgePoint( &baseFR, &apex, t1 );
+         pt[ 3 ] = chc_EdgePoint( &baseFL, &apex, t1 );
+         chc_FillPoly( dc, pt, 4, chc_Light( color, 0.2 ), chc_Light( color, 0.2 ), 1 );
+         /* line between layers */
+         ptL = chc_EdgePoint( &baseL, &apex, t1 );
+         ptR = chc_EdgePoint( &baseFL, &apex, t1 );
+         chc_Line( dc, 0x80FFFFFF, RMC_LINESTYLESOLID, ptL.X, ptL.Y, ptR.X, ptR.Y );
+         ptL = ptR;
+         ptR = chc_EdgePoint( &baseFR, &apex, t1 );
+         chc_Line( dc, 0x80FFFFFF, RMC_LINESTYLESOLID, ptL.X, ptL.Y, ptR.X, ptR.Y );
+         ptL = ptR;
+         ptR = chc_EdgePoint( &baseR, &apex, t1 );
+         chc_Line( dc, 0x80FFFFFF, RMC_LINESTYLESOLID, ptL.X, ptL.Y, ptR.X, ptR.Y );
       }
       else
       {
@@ -3570,18 +3624,22 @@ static void chc_PyramidDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_SERIES * pSe
          chc_FillPoly( dc, pt, 4, color, 0xFFFFFFFF, 1 );
       }
 
-      /* label at right of layer */
-      *szText = '\0';
-      if( lOnLabels )
-         chc_ListItem( pRegion->legend.szText, n, szText, sizeof( szText ) );
-      chc_ValueText( pSeries, pSeries->pData[ n ], dTotal, chc_Decimals( pSeries->pData[ n ] ), "", szValue, sizeof( szValue ) );
-      if( *szValue )
-         hb_strncat( hb_strncat( szText, *szText ? " " : "", sizeof( szText ) - 1 ), szValue, sizeof( szText ) - 1 );
-      if( *szText )
+      chc_PyramidText( pRegion, pSeries, n, dTotal, lOnLabels, szText, sizeof( szText ) );
+      if( *szText == '\0' )
+         continue;
+      chc_TextSize( dc, szText, 8, HB_FALSE, &tw, &th );
+      ptL = chc_EdgePoint( &baseFL, &apex, ( t0 + t1 ) / 2 );
+      ptR = chc_EdgePoint( &baseFR, &apex, ( t0 + t1 ) / 2 );
+      fMidW = ptR.X - ptL.X;
+      fLayerH = ( REAL ) ( ( yBase - yTop ) * ( t1 - t0 ) );
+      yMid = ( ptL.Y + ptR.Y ) / 2;
+      if( tw + 8 <= fMidW && th + 2 <= fLayerH )
+         chc_TextAngle( dc, szText, 8, HB_FALSE, chc_Contrast( l3D ? chc_Light( color, 0.2 ) : color ), cx, yMid, 0 );
+      else
       {
-         ptLabel = chc_EdgePoint( &baseR, &apex, ( t0 + t1 ) / 2 );
-         chc_TextSize( dc, szText, 8, HB_FALSE, &tw, &th );
-         chc_TextAngle( dc, szText, 8, HB_FALSE, 0xFF000000, ptLabel.X + 8 + tw / 2, ptLabel.Y, 0 );
+         CHC_POINTF ptEdge = chc_EdgePoint( &baseR, &apex, ( t0 + t1 ) / 2 );
+         chc_Line( dc, 0xFF808080, RMC_LINESTYLESOLID, ptEdge.X + 2, ptEdge.Y, ptEdge.X + 8, ptEdge.Y );
+         chc_TextAngle( dc, szText, 8, HB_FALSE, 0xFF000000, ptEdge.X + 10 + tw / 2, ptEdge.Y, 0 );
       }
    }
 }
