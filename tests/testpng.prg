@@ -42,17 +42,9 @@ FUNCTION Main( cPrefix )
    ? "area stacked", ChartAreaStacked( cPrefix + "_12_areastacked.png" )
    ? "bar and line", ChartBarLine( cPrefix + "_13_barline.png" )
    ? "3D and stair", ChartLine3D( cPrefix + "_14_line3d.png" )
-#ifdef USE_DLL
-   // not with rmchartclass: AddXAxis()/AddYAxis() pass min/max with ToDouble(), but rmchart.dll receives them by value,
-   // AddHighLowSeries() does not exist there (AddHightLowSeries() calls RMC_ADDHIGHTLOWSERIES) and PPC arrays are not converted
-   IF .F.
-#endif
    ? "xy",           ChartXY( cPrefix + "_15_xy.png" )
    ? "candlestick",  ChartHighLow( cPrefix + "_16_candle.png", RMC_CANDLESTICK )
    ? "ohlc",         ChartHighLow( cPrefix + "_17_ohlc.png", RMC_OHLC )
-#ifdef USE_DLL
-   ENDIF
-#endif
    ? "pyramid",      ChartPyramid( cPrefix + "_18_pyramid.png" )
 
    RETURN NIL
