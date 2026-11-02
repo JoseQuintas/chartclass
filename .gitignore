@@ -11,5 +11,6 @@ lib/*.lib
 # test output
 tests/*.png
 tests/*.jpg
+!tests/seasky.jpg
 tests/*.bmp
 tests/*.rmc

@@ -94,11 +94,22 @@ methods are accepted too. The `RMC_*()` functions can also be called directly, w
 - `tests/testpng.prg` - charts saved to PNG files, no window. The same source compiles with
   rmchartclass, to compare.
 - `tests/testwvt.prg` - charts on a GTWVT window.
+- `tests/testfivewin.prg` - FiveWin dialog with FOLDEREX, one chart on each of 16 tabs.
+- `tests/testhwgui.prg` - hwgui dialog with TAB, one chart on a PANEL of each of 16 pages.
+- `tests/testhmg3.prg`, `tests/testhmge.prg`, `tests/testoohg.prg` - HMG 3, HMG Extended and OOHG window
+  with TAB, one chart on a LABEL of each of 16 pages (a page is not a window).
+  All tab tests use `tests/samples.prg` (tabs A to J) and `tests/moresamples.prg` (tabs K to P),
+  and the GUI library .hbc found by hbmk2 (`fivewin.hbc`, `hwgui.hbc`, `hmg3.hbc`, `hmge.hbc`, `oohg_hb.hbc`).
 
 ```
 cd tests
 hbmk2 testpng.hbp
 hbmk2 testwvt.hbp
+hbmk2 testfivewin.hbp
+hbmk2 testhwgui.hbp
+hbmk2 testhmg3.hbp
+hbmk2 testhmge.hbp
+hbmk2 testoohg.hbp
 ```
 
 ---
