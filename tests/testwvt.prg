@@ -21,6 +21,7 @@ FUNCTION Main( nSeconds )
    CLS
    @ 0, 1 SAY "chartclass - ESC to exit"
    hWnd := hb_gtInfo( HB_GTI_WINHANDLE )
+   oChart:ClipParent( hWnd )
 
    nBarId := oChart:GetChartId()
    oChart:CreateChart( hWnd, nBarId, 10, 30, 380, 420, RMC_COLOR_AZURE, RMC_CTRLSTYLE3DLIGHT, .F., "", "Tahoma", 0, 0 )
