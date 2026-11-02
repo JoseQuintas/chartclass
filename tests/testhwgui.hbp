@@ -1,0 +1,9 @@
+-I../include
+../chartclass.hbc
+hwgui.hbc
+-w3
+-es2
+
+testhwgui.prg
+samples.prg
+moresamples.prg

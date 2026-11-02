@@ -1,0 +1,11 @@
+-I../include
+../chartclass.hbc
+oohg_hb.hbc
+-w3
+-es2
+-gui
+-mt
+
+testoohg.prg
+samples.prg
+moresamples.prg
