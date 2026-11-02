@@ -4533,7 +4533,6 @@ static void chc_CreateChart( HB_BOOL lOnDC )
 {
    int iId = hb_parni( 2 ), n, iResult;
    CHC_CHART * pChart;
-   HWND hWndParent;
 
    iResult = chc_GdipStartup();
    if( iResult != RMC_NO_ERROR )
@@ -4585,15 +4584,6 @@ static void chc_CreateChart( HB_BOOL lOnDC )
          return;
       }
       SetWindowLongPtrW( pChart->hWnd, GWLP_USERDATA, ( LONG_PTR ) pChart );
-      /* parent windows painting, like a console GT, must not paint over the chart */
-      for( hWndParent = pChart->hParent; hWndParent; hWndParent = GetParent( hWndParent ) )
-      {
-         LONG_PTR nStyle = GetWindowLongPtrW( hWndParent, GWL_STYLE );
-         if( ! ( nStyle & WS_CLIPCHILDREN ) )
-            SetWindowLongPtrW( hWndParent, GWL_STYLE, nStyle | WS_CLIPCHILDREN );
-         if( ! ( nStyle & WS_CHILD ) )
-            break;
-      }
    }
    hb_retni( RMC_NO_ERROR );
 }
@@ -5105,6 +5095,22 @@ HB_FUNC( CHC_SETNUMBERFORMAT )
       hb_strncpy( s_szThousand, hb_parc( 2 ), sizeof( s_szThousand ) - 1 );
    if( HB_ISCHAR( 3 ) )
       hb_strncpy( s_szSuffix, hb_parc( 3 ), sizeof( s_szSuffix ) - 1 );
+   hb_retni( RMC_NO_ERROR );
+}
+
+/* CHC_ClipParent( hWnd ) - WS_CLIPCHILDREN on hWnd and its parents, for a console GT (GTWVT/GTWVG) not paint over the chart */
+HB_FUNC( CHC_CLIPPARENT )
+{
+   HWND hWndParent;
+
+   for( hWndParent = chc_parhwnd( 1 ); hWndParent; hWndParent = GetParent( hWndParent ) )
+   {
+      LONG_PTR nStyle = GetWindowLongPtrW( hWndParent, GWL_STYLE );
+      if( ! ( nStyle & WS_CLIPCHILDREN ) )
+         SetWindowLongPtrW( hWndParent, GWL_STYLE, nStyle | WS_CLIPCHILDREN );
+      if( ! ( nStyle & WS_CHILD ) )
+         break;
+   }
    hb_retni( RMC_NO_ERROR );
 }
 

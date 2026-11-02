@@ -83,6 +83,8 @@ methods are accepted too. The `RMC_*()` functions can also be called directly, w
 - Text uses the ANSI code page, or UTF-8 when the Harbour codepage is UTF-8.
 - Numbers are formatted without locale: decimal "," and thousand "." by default, changed with
   `CHC_SetNumberFormat( cDecimal, cThousand, cSuffix )` or `oChart:SetNumberFormat()`.
+- `CHC_ClipParent( hWnd )` or `oChart:ClipParent()` sets WS_CLIPCHILDREN on the window and its
+  parents, only for a console GT (GTWVT/GTWVG), so the console repaint does not paint over the chart.
 - `RMC_CreateChartOnDC()` draws on a DC received, `RMC_Split*()` are simple Harbour functions.
 - `RMC_Draw2Printer()` with hDC 0 shows the printer dialog and prints one page. With a hDC it only
   draws, StartDoc()/StartPage() are of the caller. Position and size in mm, size 0 = printable width.
