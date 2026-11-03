@@ -3929,7 +3929,7 @@ static void chc_PyramidDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_SERIES * pSe
       fW = pArea->w - 8 - fReduce;
       if( fW < 10 || fH < 10 )
          return;
-      fDepth = l3D ? HB_MIN( fW * 0.10f, fH * 0.12f ) : 0;
+      fDepth = l3D ? HB_MIN( fW * 0.10f, fH * 0.12f ) : HB_MIN( fW * 0.06f, fH * 0.07f );
       yBase  = yTop + fH - fDepth;
       dCum = 0;
       for( n = 0; n < nData; n++ )
@@ -3957,8 +3957,8 @@ static void chc_PyramidDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_SERIES * pSe
 
    baseL.X  = cx - fW / 2;         baseL.Y  = yBase;
    baseR.X  = cx + fW / 2;         baseR.Y  = yBase;
-   baseFL.X = cx - ( l3D ? fW * 0.25f : fW / 2 ); baseFL.Y = yBase + fDepth;
-   baseFR.X = cx + ( l3D ? fW * 0.25f : fW / 2 ); baseFR.Y = yBase + fDepth;
+   baseFL.X = cx - ( l3D ? fW * 0.25f : fW / 2 ); baseFL.Y = yBase + ( l3D ? fDepth : 0 );
+   baseFR.X = cx + ( l3D ? fW * 0.25f : fW / 2 ); baseFR.Y = yBase + ( l3D ? fDepth : 0 );
 
    dCum = 0;
    for( n = 0; n < nData; n++ )
@@ -4002,9 +4002,9 @@ static void chc_PyramidDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_SERIES * pSe
       }
       else
       {
-         /* as RMChart, right half darker */
+         /* seen from the edge, right half darker, base as a V */
          CHC_POINTF baseM;
-         baseM.X = cx; baseM.Y = yBase;
+         baseM.X = cx; baseM.Y = yBase + fDepth;
          pt[ 0 ] = chc_EdgePoint( &baseL, &apex, t0 );
          pt[ 1 ] = chc_EdgePoint( &baseM, &apex, t0 );
          pt[ 2 ] = chc_EdgePoint( &baseM, &apex, t1 );
@@ -4016,6 +4016,9 @@ static void chc_PyramidDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_SERIES * pSe
          pt[ 3 ] = chc_EdgePoint( &baseM, &apex, t1 );
          chc_FillPoly( dc, pt, 4, chc_Shade( color, 50 ), chc_Shade( color, 50 ), 1 );
          ptL = chc_EdgePoint( &baseL, &apex, t1 );
+         ptR = chc_EdgePoint( &baseM, &apex, t1 );
+         chc_Line( dc, 0xFFFFFFFF, RMC_LINESTYLESOLID, ptL.X, ptL.Y, ptR.X, ptR.Y );
+         ptL = ptR;
          ptR = chc_EdgePoint( &baseR, &apex, t1 );
          chc_Line( dc, 0xFFFFFFFF, RMC_LINESTYLESOLID, ptL.X, ptL.Y, ptR.X, ptR.Y );
       }
@@ -4029,6 +4032,8 @@ static void chc_PyramidDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_SERIES * pSe
       fMidW = ptR.X - ptL.X;
       fLayerH = ( REAL ) ( ( yBase - yTop ) * ( t1 - t0 ) );
       yMid = ( ptL.Y + ptR.Y ) / 2;
+      if( ! l3D )
+         yMid = ( REAL ) ( yBase + fDepth + ( yTop - yBase - fDepth ) * ( t0 + t1 ) / 2 );
       if( tw + 8 <= fMidW && th + 2 <= fLayerH )
          chc_LabelBox( dc, szText, 8, cx, yMid, NULL, NULL );
       else
