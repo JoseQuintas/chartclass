@@ -302,6 +302,8 @@ ze_chartclass.ch - constants for chartclass, same names and values of the RMC_* 
 #define RMC_DONUT_3D_GRADIENT            58
 #define RMC_PYRAMIDE                     59
 #define RMC_PYRAMIDE3                    60
+#define RMC_PYRAMIDE3_2PARTS             61   /* chartclass: 3D with 2 parts, base as a V */
+#define RMC_PYRAMIDE_3PARTS              62   /* chartclass: 2D with 3 parts */
 
 /* PieDonutAlignment */
 #define RMC_FULL                         1

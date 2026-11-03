@@ -12,6 +12,12 @@ REQUEST HB_CODEPAGE_PTISO
 #define CHART_WIDTH  700
 #define CHART_HEIGHT 480
 
+/* chartclass only, other libs do not draw them */
+#ifndef RMC_PYRAMIDE3_2PARTS
+   #define RMC_PYRAMIDE3_2PARTS 61
+   #define RMC_PYRAMIDE_3PARTS  62
+#endif
+
 #ifdef USE_DLL
    #include "hbgtinfo.ch"
 #endif
@@ -151,20 +157,30 @@ STATIC FUNCTION ChartHighLow( cFile, nStyle )
 STATIC FUNCTION ChartPyramid( cFile )
 
    LOCAL nChartId, oChart := RMChartClass():New()
-   LOCAL nW := Int( CHART_WIDTH / 2 )
+   LOCAL nW := Int( CHART_WIDTH / 2 ), nH := Int( CHART_HEIGHT / 2 )
 
    nChartId := oChart:GetChartId()
    oChart:CreateChart( s_hParent, nChartId, 0, 0, CHART_WIDTH, CHART_HEIGHT, RMC_COLOR_WHITE, RMC_CTRLSTYLEFLAT, .T., "", "Tahoma", 0, RMC_COLOR_DEFAULT )
 
-   oChart:AddRegion( nChartId, 5, 5, nW - 10, -5, "", .F. )
+   oChart:AddRegion( nChartId, 5, 5, nW - 10, nH - 10, "", .F. )
    oChart:AddCaption( nChartId, 1, "Pyramid", RMC_COLOR_TRANSPARENT, RMC_COLOR_BLACK, 10, .T. )
    oChart:AddLegend( nChartId, 1, "Visitors*Leads*Offers*Orders", RMC_LEGEND_BOTTOM, RMC_COLOR_DEFAULT, RMC_LEGENDNORECT, RMC_COLOR_DEFAULT, 8, .F. )
    oChart:AddGridlessSeries( nChartId, 1, { 50, 30, 15, 5 }, 4, 0, 0, RMC_PYRAMIDE, RMC_FULL, 0, .F., RMC_VLABEL_DEFAULT, RMC_HATCHBRUSH_OFF, 0 )
 
-   oChart:AddRegion( nChartId, nW + 5, 5, -5, -5, "", .F. )
-   oChart:AddCaption( nChartId, 2, "Pyramid 3D", RMC_COLOR_TRANSPARENT, RMC_COLOR_BLACK, 10, .T. )
+   oChart:AddRegion( nChartId, nW + 5, 5, -5, nH - 10, "", .F. )
+   oChart:AddCaption( nChartId, 2, "Pyramid 3 parts", RMC_COLOR_TRANSPARENT, RMC_COLOR_BLACK, 10, .T. )
    oChart:AddLegend( nChartId, 2, "Visitors*Leads*Offers*Orders", RMC_LEGEND_BOTTOM, RMC_COLOR_DEFAULT, RMC_LEGENDNORECT, RMC_COLOR_DEFAULT, 8, .F. )
-   oChart:AddGridlessSeries( nChartId, 2, { 50, 30, 15, 5 }, 4, 0, 0, RMC_PYRAMIDE3, RMC_FULL, 0, .F., RMC_VLABEL_PERCENT, RMC_HATCHBRUSH_OFF, 0 )
+   oChart:AddGridlessSeries( nChartId, 2, { 50, 30, 15, 5 }, 4, 0, 0, RMC_PYRAMIDE_3PARTS, RMC_FULL, 0, .F., RMC_VLABEL_PERCENT, RMC_HATCHBRUSH_OFF, 0 )
+
+   oChart:AddRegion( nChartId, 5, nH + 5, nW - 10, -5, "", .F. )
+   oChart:AddCaption( nChartId, 3, "Pyramid 3D 2 parts", RMC_COLOR_TRANSPARENT, RMC_COLOR_BLACK, 10, .T. )
+   oChart:AddLegend( nChartId, 3, "Visitors*Leads*Offers*Orders", RMC_LEGEND_BOTTOM, RMC_COLOR_DEFAULT, RMC_LEGENDNORECT, RMC_COLOR_DEFAULT, 8, .F. )
+   oChart:AddGridlessSeries( nChartId, 3, { 50, 30, 15, 5 }, 4, 0, 0, RMC_PYRAMIDE3_2PARTS, RMC_FULL, 0, .F., RMC_VLABEL_DEFAULT, RMC_HATCHBRUSH_OFF, 0 )
+
+   oChart:AddRegion( nChartId, nW + 5, nH + 5, -5, -5, "", .F. )
+   oChart:AddCaption( nChartId, 4, "Pyramid 3D", RMC_COLOR_TRANSPARENT, RMC_COLOR_BLACK, 10, .T. )
+   oChart:AddLegend( nChartId, 4, "Visitors*Leads*Offers*Orders", RMC_LEGEND_BOTTOM, RMC_COLOR_DEFAULT, RMC_LEGENDNORECT, RMC_COLOR_DEFAULT, 8, .F. )
+   oChart:AddGridlessSeries( nChartId, 4, { 50, 30, 15, 5 }, 4, 0, 0, RMC_PYRAMIDE3, RMC_FULL, 0, .F., RMC_VLABEL_PERCENT, RMC_HATCHBRUSH_OFF, 0 )
 
    RETURN SaveChart( oChart, nChartId, cFile )
 

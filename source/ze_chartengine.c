@@ -315,6 +315,8 @@ static const struct
 #define RMC_DONUT_3D_GRADIENT     58
 #define RMC_PYRAMIDE              59
 #define RMC_PYRAMIDE3             60
+#define RMC_PYRAMIDE3_2PARTS      61
+#define RMC_PYRAMIDE_3PARTS       62
 
 #define RMC_FULL                  1
 #define RMC_HALF_TOP              2
@@ -1651,7 +1653,7 @@ static void chc_LegendSymbol( CHC_DC * dc, CHC_REGION * pRegion, int iItem, ARGB
             chc_Symbol( dc, pSeries->iSymbol, pt[ 0 ].X + 2, pt[ 0 ].Y - 2, color );
       }
    }
-   else if( pSeries && pSeries->iKind == CHC_SER_GRIDLESS && ( pSeries->iStyle == RMC_PYRAMIDE || pSeries->iStyle == RMC_PYRAMIDE3 ) )
+   else if( pSeries && pSeries->iKind == CHC_SER_GRIDLESS && ( pSeries->iStyle >= RMC_PYRAMIDE && pSeries->iStyle <= RMC_PYRAMIDE_3PARTS ) )
    {
       CHC_POINTF pt[ 3 ];
       REAL s = HB_MIN( w, h * 1.15f );
@@ -3902,16 +3904,19 @@ static void chc_PyramidText( CHC_REGION * pRegion, CHC_SERIES * pSeries, int n, 
 
 /*
 first value at the bottom, height of layer by value
-3D: square base seen from the front, front face lighter and both side faces darker
+2 parts, right half darker: RMC_PYRAMIDE flat, RMC_PYRAMIDE3_2PARTS seen from the edge with base as a V
+3 parts, front lighter and sides darker: RMC_PYRAMIDE3 square base seen from the front, RMC_PYRAMIDE_3PARTS flat
 labels inside the layer, outside at right when the layer is small
 */
 static void chc_PyramidDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_SERIES * pSeries, double dTotal, CHC_BOX * pArea )
 {
-   int  n, nData = pSeries->nData, iSeries = ( int ) ( pSeries - pRegion->series ), iPass;
-   HB_BOOL l3D = ( pSeries->iStyle == RMC_PYRAMIDE3 );
+   int  n, nData = pSeries->nData, iSeries = ( int ) ( pSeries - pRegion->series ), iPass, nB, iFace;
+   int  iStyle = pSeries->iStyle;
+   HB_BOOL l3Parts = ( iStyle == RMC_PYRAMIDE3 || iStyle == RMC_PYRAMIDE_3PARTS );
    HB_BOOL lOnLabels = pRegion->legend.lSet && ! pRegion->legend.lHide && pRegion->legend.iAlign == RMC_LEGEND_ONVLABELS;
    REAL fReduce = 0, tw, th, fW = 0, fH, fDepth = 0, cx, yTop, yBase = 0;
-   CHC_POINTF apex, baseL, baseFL, baseFR, baseR, pt[ 4 ];
+   CHC_POINTF apex, base[ 4 ], pt[ 4 ];
+   ARGB lineColor = l3Parts ? 0x80FFFFFF : 0xFFFFFFFF;
    char szText[ 256 ];
    double dCum;
 
@@ -3929,14 +3934,19 @@ static void chc_PyramidDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_SERIES * pSe
       fW = pArea->w - 8 - fReduce;
       if( fW < 10 || fH < 10 )
          return;
-      fDepth = l3D ? HB_MIN( fW * 0.10f, fH * 0.12f ) : HB_MIN( fW * 0.06f, fH * 0.07f );
+      if( iStyle == RMC_PYRAMIDE3 )
+         fDepth = HB_MIN( fW * 0.10f, fH * 0.12f );
+      else if( iStyle == RMC_PYRAMIDE3_2PARTS )
+         fDepth = HB_MIN( fW * 0.06f, fH * 0.07f );
+      else
+         fDepth = 0;
       yBase  = yTop + fH - fDepth;
       dCum = 0;
       for( n = 0; n < nData; n++ )
       {
          double t0 = dCum / dTotal, t1 = ( dCum + fabs( pSeries->pData[ n ] ) ) / dTotal;
          /* width of front face at middle of layer, height of layer */
-         REAL fMidW = ( REAL ) ( ( l3D ? fW * 0.5f : fW ) * ( 1 - ( t0 + t1 ) / 2 ) );
+         REAL fMidW = ( REAL ) ( ( l3Parts ? fW * 0.5f : fW ) * ( 1 - ( t0 + t1 ) / 2 ) );
          REAL fLayerH = ( REAL ) ( ( yBase - yTop ) * ( t1 - t0 ) );
 
          dCum += fabs( pSeries->pData[ n ] );
@@ -3955,90 +3965,65 @@ static void chc_PyramidDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_SERIES * pSe
       fReduce += 2 * fOver;
    }
 
-   baseL.X  = cx - fW / 2;         baseL.Y  = yBase;
-   baseR.X  = cx + fW / 2;         baseR.Y  = yBase;
-   baseFL.X = cx - ( l3D ? fW * 0.25f : fW / 2 ); baseFL.Y = yBase + ( l3D ? fDepth : 0 );
-   baseFR.X = cx + ( l3D ? fW * 0.25f : fW / 2 ); baseFR.Y = yBase + ( l3D ? fDepth : 0 );
+   /* corners of base from left to right, the middle ones in front */
+   base[ 0 ].X = cx - fW / 2;      base[ 0 ].Y = yBase;
+   if( l3Parts )
+   {
+      base[ 1 ].X = cx - fW * 0.25f; base[ 1 ].Y = yBase + fDepth;
+      base[ 2 ].X = cx + fW * 0.25f; base[ 2 ].Y = yBase + fDepth;
+      nB = 4;
+   }
+   else
+   {
+      base[ 1 ].X = cx;              base[ 1 ].Y = yBase + fDepth;
+      nB = 3;
+   }
+   base[ nB - 1 ].X = cx + fW / 2; base[ nB - 1 ].Y = yBase;
 
    dCum = 0;
    for( n = 0; n < nData; n++ )
    {
       double t0 = dCum / dTotal, t1 = ( dCum + fabs( pSeries->pData[ n ] ) ) / dTotal;
-      ARGB   color = chc_PointColor( pRegion, iSeries, n );
+      ARGB   color = chc_PointColor( pRegion, iSeries, n ), side;
       CHC_POINTF ptL, ptR;
       REAL   fMidW, fLayerH, yMid;
 
       dCum += fabs( pSeries->pData[ n ] );
       if( pSeries->lLucent )
          color = chc_Alpha( color, 170 );
-      if( l3D )
+      side = chc_Shade( color, 50 );
+      for( iFace = 0; iFace < nB - 1; iFace++ )
       {
-         ARGB side = chc_Shade( color, 50 );
-         pt[ 0 ] = chc_EdgePoint( &baseL, &apex, t0 );
-         pt[ 1 ] = chc_EdgePoint( &baseFL, &apex, t0 );
-         pt[ 2 ] = chc_EdgePoint( &baseFL, &apex, t1 );
-         pt[ 3 ] = chc_EdgePoint( &baseL, &apex, t1 );
-         chc_FillPoly( dc, pt, 4, side, side, 1 );
-         pt[ 0 ] = chc_EdgePoint( &baseFR, &apex, t0 );
-         pt[ 1 ] = chc_EdgePoint( &baseR, &apex, t0 );
-         pt[ 2 ] = chc_EdgePoint( &baseR, &apex, t1 );
-         pt[ 3 ] = chc_EdgePoint( &baseFR, &apex, t1 );
-         chc_FillPoly( dc, pt, 4, side, side, 1 );
-         pt[ 0 ] = chc_EdgePoint( &baseFL, &apex, t0 );
-         pt[ 1 ] = chc_EdgePoint( &baseFR, &apex, t0 );
-         pt[ 2 ] = chc_EdgePoint( &baseFR, &apex, t1 );
-         pt[ 3 ] = chc_EdgePoint( &baseFL, &apex, t1 );
-         chc_FillPoly( dc, pt, 4, color, color, 1 );
-         /* line between layers */
-         ptL = chc_EdgePoint( &baseL, &apex, t1 );
-         ptR = chc_EdgePoint( &baseFL, &apex, t1 );
-         chc_Line( dc, 0x80FFFFFF, RMC_LINESTYLESOLID, ptL.X, ptL.Y, ptR.X, ptR.Y );
-         ptL = ptR;
-         ptR = chc_EdgePoint( &baseFR, &apex, t1 );
-         chc_Line( dc, 0x80FFFFFF, RMC_LINESTYLESOLID, ptL.X, ptL.Y, ptR.X, ptR.Y );
-         ptL = ptR;
-         ptR = chc_EdgePoint( &baseR, &apex, t1 );
-         chc_Line( dc, 0x80FFFFFF, RMC_LINESTYLESOLID, ptL.X, ptL.Y, ptR.X, ptR.Y );
+         /* 2 parts: left lighter; 3 parts: front lighter */
+         ARGB face = ( iFace == ( l3Parts ? 1 : 0 ) ) ? color : side;
+         pt[ 0 ] = chc_EdgePoint( &base[ iFace ], &apex, t0 );
+         pt[ 1 ] = chc_EdgePoint( &base[ iFace + 1 ], &apex, t0 );
+         pt[ 2 ] = chc_EdgePoint( &base[ iFace + 1 ], &apex, t1 );
+         pt[ 3 ] = chc_EdgePoint( &base[ iFace ], &apex, t1 );
+         chc_FillPoly( dc, pt, 4, face, face, 1 );
       }
-      else
+      /* line between layers */
+      for( iFace = 0; iFace < nB - 1; iFace++ )
       {
-         /* seen from the edge, right half darker, base as a V */
-         CHC_POINTF baseM;
-         baseM.X = cx; baseM.Y = yBase + fDepth;
-         pt[ 0 ] = chc_EdgePoint( &baseL, &apex, t0 );
-         pt[ 1 ] = chc_EdgePoint( &baseM, &apex, t0 );
-         pt[ 2 ] = chc_EdgePoint( &baseM, &apex, t1 );
-         pt[ 3 ] = chc_EdgePoint( &baseL, &apex, t1 );
-         chc_FillPoly( dc, pt, 4, color, color, 1 );
-         pt[ 0 ] = chc_EdgePoint( &baseM, &apex, t0 );
-         pt[ 1 ] = chc_EdgePoint( &baseR, &apex, t0 );
-         pt[ 2 ] = chc_EdgePoint( &baseR, &apex, t1 );
-         pt[ 3 ] = chc_EdgePoint( &baseM, &apex, t1 );
-         chc_FillPoly( dc, pt, 4, chc_Shade( color, 50 ), chc_Shade( color, 50 ), 1 );
-         ptL = chc_EdgePoint( &baseL, &apex, t1 );
-         ptR = chc_EdgePoint( &baseM, &apex, t1 );
-         chc_Line( dc, 0xFFFFFFFF, RMC_LINESTYLESOLID, ptL.X, ptL.Y, ptR.X, ptR.Y );
-         ptL = ptR;
-         ptR = chc_EdgePoint( &baseR, &apex, t1 );
-         chc_Line( dc, 0xFFFFFFFF, RMC_LINESTYLESOLID, ptL.X, ptL.Y, ptR.X, ptR.Y );
+         ptL = chc_EdgePoint( &base[ iFace ], &apex, t1 );
+         ptR = chc_EdgePoint( &base[ iFace + 1 ], &apex, t1 );
+         chc_Line( dc, lineColor, RMC_LINESTYLESOLID, ptL.X, ptL.Y, ptR.X, ptR.Y );
       }
 
       chc_PyramidText( pRegion, pSeries, n, dTotal, lOnLabels, szText, sizeof( szText ) );
       if( *szText == '\0' )
          continue;
       chc_TextSize( dc, szText, 8, HB_FALSE, &tw, &th );
-      ptL = chc_EdgePoint( &baseFL, &apex, ( t0 + t1 ) / 2 );
-      ptR = chc_EdgePoint( &baseFR, &apex, ( t0 + t1 ) / 2 );
+      ptL = chc_EdgePoint( &base[ l3Parts ? 1 : 0 ], &apex, ( t0 + t1 ) / 2 );
+      ptR = chc_EdgePoint( &base[ l3Parts ? 2 : nB - 1 ], &apex, ( t0 + t1 ) / 2 );
       fMidW = ptR.X - ptL.X;
       fLayerH = ( REAL ) ( ( yBase - yTop ) * ( t1 - t0 ) );
-      yMid = ( ptL.Y + ptR.Y ) / 2;
-      if( ! l3D )
-         yMid = ( REAL ) ( yBase + fDepth + ( yTop - yBase - fDepth ) * ( t0 + t1 ) / 2 );
+      yMid = ( REAL ) ( yBase + fDepth + ( yTop - yBase - fDepth ) * ( t0 + t1 ) / 2 );
       if( tw + 8 <= fMidW && th + 2 <= fLayerH )
          chc_LabelBox( dc, szText, 8, cx, yMid, NULL, NULL );
       else
       {
-         CHC_POINTF ptEdge = chc_EdgePoint( &baseR, &apex, ( t0 + t1 ) / 2 );
+         CHC_POINTF ptEdge = chc_EdgePoint( &base[ nB - 1 ], &apex, ( t0 + t1 ) / 2 );
          chc_Line( dc, 0xFF808080, RMC_LINESTYLESOLID, ptEdge.X + 2, ptEdge.Y, ptEdge.X + 8, ptEdge.Y );
          chc_TextAngle( dc, szText, 8, HB_FALSE, 0xFF000000, ptEdge.X + 10 + tw / 2, ptEdge.Y, 0 );
       }
@@ -4081,7 +4066,7 @@ static void chc_GridlessDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_SERIES * pS
    }
    if( dTotal <= 0 )
       return;
-   if( iStyle == RMC_PYRAMIDE || iStyle == RMC_PYRAMIDE3 )
+   if( iStyle >= RMC_PYRAMIDE && iStyle <= RMC_PYRAMIDE_3PARTS )
    {
       chc_PyramidDraw( dc, pRegion, pSeries, dTotal, pArea );
       return;
