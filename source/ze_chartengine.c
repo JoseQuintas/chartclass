@@ -62,6 +62,7 @@ CHC_GDIP_FUNC( GpStatus, GdipGraphicsClear, ( GpGraphics *, ARGB ) )
 CHC_GDIP_FUNC( GpStatus, GdipCreateSolidFill, ( ARGB, GpBrush ** ) )
 CHC_GDIP_FUNC( GpStatus, GdipCreateLineBrushFromRect, ( const CHC_RECTF *, ARGB, ARGB, int, int, GpBrush ** ) )
 CHC_GDIP_FUNC( GpStatus, GdipSetLineSigmaBlend, ( GpBrush *, REAL, REAL ) )
+CHC_GDIP_FUNC( GpStatus, GdipSetLinePresetBlend, ( GpBrush *, const ARGB *, const REAL *, INT ) )
 CHC_GDIP_FUNC( GpStatus, GdipCreateHatchBrush, ( int, ARGB, ARGB, GpBrush ** ) )
 CHC_GDIP_FUNC( GpStatus, GdipCreateTexture, ( GpImage *, int, GpBrush ** ) )
 CHC_GDIP_FUNC( GpStatus, GdipCreatePathGradientFromPath, ( const GpPath *, GpBrush ** ) )
@@ -137,6 +138,7 @@ static const struct
    CHC_GDIP_ENTRY( GdipCreateSolidFill ),
    CHC_GDIP_ENTRY( GdipCreateLineBrushFromRect ),
    CHC_GDIP_ENTRY( GdipSetLineSigmaBlend ),
+   CHC_GDIP_ENTRY( GdipSetLinePresetBlend ),
    CHC_GDIP_ENTRY( GdipCreateHatchBrush ),
    CHC_GDIP_ENTRY( GdipCreateTexture ),
    CHC_GDIP_ENTRY( GdipCreatePathGradientFromPath ),
@@ -623,6 +625,16 @@ static const ARGB s_palette[] = {
 
 #define CHC_PALETTE( n )  s_palette[ ( n ) % ( sizeof( s_palette ) / sizeof( ARGB ) ) ]
 
+/* RMChart defaults are darker for column bars: dark blue, green, dark red, dark goldenrod */
+static const ARGB s_paletteColumn[] = {
+   0xFF00008B, 0xFF008000, 0xFF8B0000, 0xFFB8860B, 0xFF008B8B, 0xFF800080,
+   0xFF8B4513, 0xFF2F4F4F, 0xFF556B2F, 0xFF483D8B, 0xFFA0522D, 0xFF1E90FF };
+
+/* and pure colors for 3D gradient pie: blue, green, red, yellow, brown */
+static const ARGB s_palettePie3D[] = {
+   0xFF0000FF, 0xFF00A000, 0xFFFF0000, 0xFFFFE000, 0xFFA52A2A, 0xFF1BA3A8,
+   0xFFD35F9C, 0xFF7A8B99, 0xFF6B8E23, 0xFF4A4A8F, 0xFFB5651D, 0xFF5DADE2 };
+
 /* ---------------------------------------------------------------- GDI+ start/stop */
 
 static void chc_GdipShutdown( void * cargo )
@@ -945,6 +957,19 @@ static ARGB chc_Mix( ARGB color, ARGB target, double dFactor )
 #define chc_Light( c, f )  chc_Mix( ( c ), 0xFFFFFFFF, ( f ) )
 #define chc_Dark( c, f )   chc_Mix( ( c ), 0xFF000000, ( f ) )
 
+/* RMChart shade of bars and rims: same value less on each channel, negative is lighter */
+static ARGB chc_Shade( ARGB color, int iLess )
+{
+   int r = ( int ) ( ( color >> 16 ) & 0xFF ) - iLess;
+   int g = ( int ) ( ( color >> 8 ) & 0xFF ) - iLess;
+   int b = ( int ) ( color & 0xFF ) - iLess;
+
+   r = HB_MIN( HB_MAX( r, 0 ), 255 );
+   g = HB_MIN( HB_MAX( g, 0 ), 255 );
+   b = HB_MIN( HB_MAX( b, 0 ), 255 );
+   return ( color & 0xFF000000 ) | ( ( ARGB ) r << 16 ) | ( ( ARGB ) g << 8 ) | ( ARGB ) b;
+}
+
 static ARGB chc_Alpha( ARGB color, int iAlpha )
 {
    return ( color & 0x00FFFFFF ) | ( ( ARGB ) ( iAlpha & 0xFF ) << 24 );
@@ -1010,17 +1035,21 @@ static void chc_FillGradient( CHC_DC * dc, ARGB c1, ARGB c2, REAL x, REAL y, REA
    pGdipDeleteBrush( brush );
 }
 
-/* gradient c1 -> c2 -> c1, the c2 peak at fFocus (0 to 1) */
-static void chc_FillGradientFocus( CHC_DC * dc, ARGB c1, ARGB c2, REAL x, REAL y, REAL w, REAL h, HB_BOOL lVertical, REAL fFocus )
+/* gradient with n colors at positions 0 to 1, across the width or the height */
+static void chc_FillBlend( CHC_DC * dc, const ARGB * aColor, const REAL * aPos, int nCount, REAL x, REAL y, REAL w, REAL h, HB_BOOL lVertical )
 {
    GpBrush * brush = NULL;
    CHC_RECTF rc;
 
    if( w <= 0 || h <= 0 )
       return;
-   rc.X = x - 1; rc.Y = y - 1; rc.Width = w + 2; rc.Height = h + 2;
-   pGdipCreateLineBrushFromRect( &rc, c1, c2, lVertical ? GP_GRADIENTVERTICAL : GP_GRADIENTHORIZONTAL, GP_WRAPTILEFLIPXY, &brush );
-   pGdipSetLineSigmaBlend( brush, fFocus, 1.0f );
+   rc.X = x; rc.Y = y; rc.Width = w; rc.Height = h;
+   if( lVertical )
+      rc.Y -= 0.5f, rc.Height += 1;
+   else
+      rc.X -= 0.5f, rc.Width += 1;
+   pGdipCreateLineBrushFromRect( &rc, aColor[ 0 ], aColor[ nCount - 1 ], lVertical ? GP_GRADIENTVERTICAL : GP_GRADIENTHORIZONTAL, GP_WRAPTILEFLIPXY, &brush );
+   pGdipSetLinePresetBlend( brush, aColor, aPos, nCount );
    pGdipFillRectangle( dc->g, brush, x, y, w, h );
    pGdipDeleteBrush( brush );
 }
@@ -1178,6 +1207,25 @@ static void chc_TextAngle( CHC_DC * dc, const char * szText, int iSize, HB_BOOL 
 }
 
 /* number formatted by hand, without locale: prefix, thousand separator, decimals, suffix */
+/* value label as RMChart: light yellow box with border, centered on cx, cy */
+static void chc_LabelBox( CHC_DC * dc, const char * szText, int iSize, REAL cx, REAL cy, REAL * pW, REAL * pH )
+{
+   REAL w, h;
+
+   if( szText == NULL || *szText == '\0' )
+      return;
+   chc_TextSize( dc, szText, iSize, HB_FALSE, &w, &h );
+   w += 4;
+   h += 1;
+   chc_FillRect( dc, 0xFFFFFFE1, cx - w / 2, cy - h / 2, w, h );
+   chc_DrawRect( dc, 0xFF000000, ( REAL ) floor( cx - w / 2 ), ( REAL ) floor( cy - h / 2 ), ( REAL ) ceil( w ), ( REAL ) ceil( h ) );
+   chc_TextRect( dc, szText, iSize, HB_FALSE, 0xFF000000, cx - w / 2, cy - h / 2, w, h, GP_ALIGNCENTER, GP_ALIGNCENTER );
+   if( pW )
+      *pW = w;
+   if( pH )
+      *pH = h;
+}
+
 static void chc_FormatValue( double dValue, int nDecimals, const char * szUnit, char * szDest, int iSize )
 {
    char   szDigits[ 64 ], szOut[ 128 ];
@@ -1410,11 +1458,22 @@ static HB_BOOL chc_IsGridless( CHC_REGION * pRegion )
    return HB_FALSE;
 }
 
+/* default color n, by style of series */
+static ARGB chc_DefColor( CHC_SERIES * pSeries, int n )
+{
+   n %= ( int ) ( sizeof( s_palette ) / sizeof( ARGB ) );
+   if( pSeries->iKind == CHC_SER_BAR && pSeries->iStyle == RMC_COLUMN_FLAT )
+      return s_paletteColumn[ n ];
+   if( pSeries->iKind == CHC_SER_GRIDLESS && pSeries->iStyle == RMC_PIE_3D_GRADIENT )
+      return s_palettePie3D[ n ];
+   return s_palette[ n ];
+}
+
 static ARGB chc_SeriesColor( CHC_REGION * pRegion, int iSeries )
 {
    CHC_SERIES * pSeries = &pRegion->series[ iSeries ];
 
-   return chc_Color( pSeries->color, CHC_PALETTE( iSeries ) );
+   return chc_Color( pSeries->color, chc_DefColor( pSeries, iSeries ) );
 }
 
 static ARGB chc_PointColor( CHC_REGION * pRegion, int iSeries, int iPoint )
@@ -1422,9 +1481,12 @@ static ARGB chc_PointColor( CHC_REGION * pRegion, int iSeries, int iPoint )
    CHC_SERIES * pSeries = &pRegion->series[ iSeries ];
 
    if( pSeries->pColors && iPoint < pSeries->nColors && pSeries->pColors[ iPoint ] != RMC_COLOR_DEFAULT )
-      return chc_Color( pSeries->pColors[ iPoint ], CHC_PALETTE( iPoint ) );
+      return chc_Color( pSeries->pColors[ iPoint ], chc_DefColor( pSeries, iPoint ) );
    if( pSeries->iKind == CHC_SER_GRIDLESS )
-      return CHC_PALETTE( iPoint );
+      return chc_DefColor( pSeries, iPoint );
+   /* as RMChart, bars with transparent color use one default color by bar */
+   if( pSeries->iKind == CHC_SER_BAR && pSeries->color == RMC_COLOR_TRANSPARENT )
+      return chc_DefColor( pSeries, iPoint );
    return chc_SeriesColor( pRegion, iSeries );
 }
 
@@ -1510,6 +1572,86 @@ static ARGB chc_LegendColor( CHC_REGION * pRegion, int iItem )
 
 /* ---------------------------------------------------------------- legend */
 
+static void chc_BarDraw( CHC_DC * dc, CHC_BOX * pBar, ARGB color, int iStyle, HB_BOOL lHorizontal );
+static void chc_FillPoly( CHC_DC * dc, CHC_POINTF * pt, int n, ARGB fill, ARGB border, REAL fWidth );
+
+/* series of legend item n, NULL when none */
+static CHC_SERIES * chc_LegendSeries( CHC_REGION * pRegion, int iItem )
+{
+   int n;
+
+   for( n = 0; n < pRegion->nSeries; n++ )
+   {
+      if( pRegion->series[ n ].iKind == CHC_SER_GRIDLESS )
+         return &pRegion->series[ n ];
+   }
+   if( pRegion->nSeries > 0 && pRegion->series[ 0 ].iKind == CHC_SER_BAR && pRegion->series[ 0 ].pColors && iItem >= pRegion->nSeries )
+      return &pRegion->series[ 0 ];
+   return iItem < pRegion->nSeries ? &pRegion->series[ iItem ] : NULL;
+}
+
+/* size of legend symbol: bars and pies have a small picture of the series */
+static void chc_LegendSwatch( CHC_REGION * pRegion, int iItem, REAL th, REAL * pW, REAL * pH )
+{
+   CHC_SERIES * pSeries = chc_LegendSeries( pRegion, iItem );
+
+   *pW = *pH = th * 0.75f;
+   if( pSeries && ( pSeries->iKind == CHC_SER_BAR || pSeries->iKind == CHC_SER_GRIDLESS ) )
+   {
+      *pW = th * 1.4f;
+      *pH = th * 0.95f;
+   }
+}
+
+static void chc_LegendSymbol( CHC_DC * dc, CHC_REGION * pRegion, int iItem, ARGB color, REAL x, REAL y, REAL w, REAL h )
+{
+   CHC_SERIES * pSeries = chc_LegendSeries( pRegion, iItem );
+   CHC_BOX box;
+
+   box.x = x; box.y = y; box.w = w; box.h = h;
+   if( pSeries && pSeries->iKind == CHC_SER_BAR )
+   {
+      int iStyle = pSeries->iStyle;
+      /* 3D and cylinder do not fit, front only */
+      if( iStyle == RMC_BAR_3D || iStyle == RMC_BAR_3D_GRADIENT || iStyle == RMC_COLUMN_3D || iStyle == RMC_COLUMN_3D_GRADIENT || iStyle == RMC_COLUMN_FLUTED )
+         iStyle = RMC_BAR_FLAT_GRADIENT2;
+      chc_BarDraw( dc, &box, color, iStyle, HB_FALSE );
+      if( iStyle == RMC_COLUMN_FLAT )
+         chc_DrawRect( dc, chc_Alpha( color, 160 ), x, y, w, h );
+   }
+   else if( pSeries && pSeries->iKind == CHC_SER_GRIDLESS && ( pSeries->iStyle == RMC_PYRAMIDE || pSeries->iStyle == RMC_PYRAMIDE3 ) )
+   {
+      CHC_POINTF pt[ 3 ];
+      REAL s = HB_MIN( w, h * 1.15f );
+      pt[ 0 ].X = x + ( w - s ) / 2;     pt[ 0 ].Y = y + h;
+      pt[ 1 ].X = x + w / 2;             pt[ 1 ].Y = y;
+      pt[ 2 ].X = x + ( w + s ) / 2;     pt[ 2 ].Y = y + h;
+      chc_FillPoly( dc, pt, 3, color, chc_Shade( color, 88 ), 1 );
+   }
+   else if( pSeries && pSeries->iKind == CHC_SER_GRIDLESS )
+   {
+      /* a quarter of pie */
+      GpPath * path = NULL;
+      GpBrush * brush;
+      GpPen * pen;
+      REAL r = HB_MIN( w, h );
+      pGdipCreatePath( GP_FILLALTERNATE, &path );
+      pGdipAddPathPie( path, x + ( w - r ) / 2, y + h - r, r * 2, r * 2, 180, 90 );
+      brush = chc_Solid( color );
+      pGdipFillPath( dc->g, brush, path );
+      pGdipDeleteBrush( brush );
+      pen = chc_Pen( chc_Shade( color, 88 ), 1, RMC_LINESTYLESOLID );
+      pGdipDrawPath( dc->g, pen, path );
+      pGdipDeletePen( pen );
+      pGdipDeletePath( path );
+   }
+   else
+   {
+      chc_FillRect( dc, color, x, y, w, h );
+      chc_DrawRect( dc, chc_Dark( color, 0.3 ), x, y, w, h );
+   }
+}
+
 static void chc_LegendMeasure( CHC_DC * dc, CHC_REGION * pRegion, HB_BOOL lHorizontal, REAL fMaxW, REAL * pW, REAL * pH )
 {
    CHC_LEGEND * pLegend = &pRegion->legend;
@@ -1526,8 +1668,10 @@ static void chc_LegendMeasure( CHC_DC * dc, CHC_REGION * pRegion, HB_BOOL lHoriz
    for( n = 0; n < nItems; n++ )
    {
       REAL fItem;
+      REAL fSwH;
       chc_ListItem( pLegend->szText, n, szItem, sizeof( szItem ) );
       chc_TextSize( dc, szItem, pLegend->iFontSize, pLegend->lBold, &tw, &th );
+      chc_LegendSwatch( pRegion, n, th, &fSwatch, &fSwH );
       fItem = fSwatch + 4 + tw + 12;
       if( lHorizontal )
       {
@@ -1608,18 +1752,18 @@ static void chc_LegendDraw( CHC_DC * dc, CHC_REGION * pRegion, HB_BOOL lHorizont
    cy = y + 3;
    for( n = 0; n < nItems; n++ )
    {
-      REAL fItem;
+      REAL fItem, fSwH;
       ARGB color = chc_LegendColor( pRegion, n );
       chc_ListItem( pLegend->szText, n, szItem, sizeof( szItem ) );
       chc_TextSize( dc, szItem, pLegend->iFontSize, pLegend->lBold, &tw, &th );
+      chc_LegendSwatch( pRegion, n, th, &fSwatch, &fSwH );
       fItem = fSwatch + 4 + tw + 12;
       if( lHorizontal && cx + fItem > x + w && cx > x + 4 )
       {
          cx = x + 4;
          cy += th + 2;
       }
-      chc_FillRect( dc, color, cx, cy + ( th - fSwatch ) / 2, fSwatch, fSwatch );
-      chc_DrawRect( dc, chc_Dark( color, 0.3 ), cx, cy + ( th - fSwatch ) / 2, fSwatch, fSwatch );
+      chc_LegendSymbol( dc, pRegion, n, color, cx, cy + ( th - fSwH ) / 2, fSwatch, fSwH );
       chc_TextRect( dc, szItem, pLegend->iFontSize, pLegend->lBold, fg, cx + fSwatch + 4, cy, tw + 2, th, GP_ALIGNNEAR, GP_ALIGNCENTER );
       if( lHorizontal )
          cx += fItem;
@@ -1704,15 +1848,24 @@ static void chc_BarDraw( CHC_DC * dc, CHC_BOX * pBar, ARGB color, int iStyle, HB
          break;
 
       case RMC_COLUMN_FLAT:
-         chc_FillGradientFocus( dc, chc_Dark( color, 0.1 ), chc_Light( color, 0.75 ), x, y, w, h, lHorizontal, 0.35f );
-         chc_DrawRect( dc, chc_Dark( color, 0.25 ), x, y, w, h );
+      {
+         /* as RMChart: narrow reflex near the left side, color, wide reflex near the right side */
+         ARGB aColor[ 6 ];
+         REAL aPos[ 6 ] = { 0.0f, 0.14f, 0.31f, 0.77f, 0.93f, 1.0f };
+         aColor[ 0 ] = chc_Light( color, 0.15 );
+         aColor[ 1 ] = chc_Light( color, 0.85 );
+         aColor[ 2 ] = color;
+         aColor[ 3 ] = chc_Light( color, 0.88 );
+         aColor[ 4 ] = chc_Light( color, 0.55 );
+         aColor[ 5 ] = chc_Light( color, 0.15 );
+         chc_FillBlend( dc, aColor, aPos, 6, x, y, w, h, lHorizontal );
          break;
+      }
 
       case RMC_BAR_3D:
       case RMC_BAR_3D_GRADIENT:
       {
          CHC_POINTF pt[ 4 ];
-         GpBrush * brush;
          REAL d = ( lHorizontal ? h : w ) * 0.35f;
          if( d > 14 )
             d = 14;
@@ -1722,21 +1875,19 @@ static void chc_BarDraw( CHC_DC * dc, CHC_BOX * pBar, ARGB color, int iStyle, HB
          else
             chc_FillRect( dc, color, x, y, w, h );
          /* top */
+         /* as RMChart: top and side a bit darker, dark edges */
          pt[ 0 ].X = x;         pt[ 0 ].Y = y;
          pt[ 1 ].X = x + d;     pt[ 1 ].Y = y - d;
          pt[ 2 ].X = x + w + d; pt[ 2 ].Y = y - d;
          pt[ 3 ].X = x + w;     pt[ 3 ].Y = y;
-         brush = chc_Solid( chc_Light( color, 0.35 ) );
-         pGdipFillPolygon( dc->g, brush, pt, 4, GP_FILLALTERNATE );
-         pGdipDeleteBrush( brush );
+         chc_FillPoly( dc, pt, 4, chc_Shade( color, 30 ), chc_Dark( color, 0.7 ), 1 );
          /* right side */
          pt[ 0 ].X = x + w;     pt[ 0 ].Y = y;
          pt[ 1 ].X = x + w + d; pt[ 1 ].Y = y - d;
          pt[ 2 ].X = x + w + d; pt[ 2 ].Y = y + h - d;
          pt[ 3 ].X = x + w;     pt[ 3 ].Y = y + h;
-         brush = chc_Solid( chc_Dark( color, 0.3 ) );
-         pGdipFillPolygon( dc->g, brush, pt, 4, GP_FILLALTERNATE );
-         pGdipDeleteBrush( brush );
+         chc_FillPoly( dc, pt, 4, chc_Shade( color, 30 ), chc_Dark( color, 0.7 ), 1 );
+         chc_DrawRect( dc, chc_Dark( color, 0.7 ), x, y, w + 1, h + 1 );
          break;
       }
 
@@ -1788,9 +1939,49 @@ static void chc_BarDraw( CHC_DC * dc, CHC_BOX * pBar, ARGB color, int iStyle, HB
          break;
 
       default: /* RMC_BAR_FLAT_GRADIENT2 */
-         chc_FillGradient( dc, color, light, x, y, w, h, lHorizontal, HB_TRUE );
+      {
+         /* as RMChart: border darker, color on center */
+         ARGB aColor[ 3 ];
+         REAL aPos[ 3 ] = { 0.0f, 0.5f, 1.0f };
+         aColor[ 0 ] = aColor[ 2 ] = chc_Shade( color, 88 );
+         aColor[ 1 ] = color;
+         chc_FillBlend( dc, aColor, aPos, 3, x, y, w, h, lHorizontal );
          break;
+      }
    }
+}
+
+/* rounded cap on end of column bar, top of stack */
+static void chc_BarCap( CHC_DC * dc, CHC_BOX * pBar, ARGB color, HB_BOOL lHorizontal, HB_BOOL lNegative )
+{
+   REAL t = ( lHorizontal ? pBar->h : pBar->w ) * 0.1f, x, y, w, h;
+   GpPath * path;
+   GpBrush * brush;
+
+   t = HB_MIN( HB_MAX( t, 3 ), 7 );
+   if( lHorizontal )
+   {
+      t = HB_MIN( t, pBar->w );
+      w = t;
+      h = pBar->h;
+      x = lNegative ? pBar->x : pBar->x + pBar->w - t;
+      y = pBar->y;
+   }
+   else
+   {
+      t = HB_MIN( t, pBar->h );
+      w = pBar->w;
+      h = t;
+      x = pBar->x;
+      y = lNegative ? pBar->y + pBar->h - t : pBar->y;
+   }
+   if( t < 1 )
+      return;
+   path  = chc_RoundRectPath( x, y, w, h, t / 2 );
+   brush = chc_Solid( color );
+   pGdipFillPath( dc->g, brush, path );
+   pGdipDeleteBrush( brush );
+   pGdipDeletePath( path );
 }
 
 /* value label of bar or slice */
@@ -1806,7 +1997,7 @@ static void chc_ValueText( CHC_SERIES * pSeries, double dValue, double dTotal, i
    if( iVLabel == RMC_VLABEL_NONE || iVLabel == RMC_VLABEL_LEGENDONLY || ( lNoZero && dValue == 0 ) )
       return;
    chc_FormatValue( dValue, nDecimals, szUnit, szValue, sizeof( szValue ) );
-   chc_FormatValue( dTotal != 0 ? dValue * 100 / dTotal : 0, 1, "", szPct, sizeof( szPct ) );
+   chc_FormatValue( dTotal != 0 ? dValue * 100 / dTotal : 0, 2, "", szPct, sizeof( szPct ) );
    switch( iVLabel )
    {
       case RMC_VLABEL_PERCENT:
@@ -2014,10 +2205,27 @@ static void chc_BarsDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_GRIDINFO * pInf
             bar.w = ( REAL ) fabs( p2 - p1 );
          }
          if( pSeries->lLucent )
-            color = chc_Alpha( color, 150 );
+            color = chc_Alpha( color, 200 );
          chc_BarDraw( dc, &bar, color, pSeries->iStyle, ! pInfo->lVertical );
          if( pSeries->iHatch == RMC_HATCHBRUSH_ON )
             chc_BarHatch( dc, &bar, color, n );
+         if( pSeries->iStyle == RMC_COLUMN_FLAT && ! lFloat )
+         {
+            /* cap only on the last bar of the stack */
+            HB_BOOL lTop = HB_TRUE;
+            int m;
+            for( m = n + 1; lStack && m < pRegion->nSeries; m++ )
+            {
+               CHC_SERIES * pNext = &pRegion->series[ m ];
+               if( aSlot[ m ] == iStackSlot && i < pNext->nData && pNext->pData[ i ] != 0 && ( pNext->pData[ i ] > 0 ) == ( dValue >= 0 ) )
+               {
+                  lTop = HB_FALSE;
+                  break;
+               }
+            }
+            if( lTop )
+               chc_BarCap( dc, &bar, color, ! pInfo->lVertical, dValue < 0 );
+         }
 
          chc_ValueText( pSeries, lFloat ? dValue : pSeries->pData[ i ], dSum, nDecimals, "", szLabel, sizeof( szLabel ) );
          if( *szLabel )
@@ -2027,9 +2235,21 @@ static void chc_BarsDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_GRIDINFO * pInf
             if( lStack || lFloat )
                chc_TextAngle( dc, szLabel, 7, HB_FALSE, chc_Contrast( color ), bar.x + bar.w / 2, bar.y + bar.h / 2, 0 );
             else if( pInfo->lVertical )
-               chc_TextAngle( dc, szLabel, 7, HB_FALSE, 0xFF000000, bar.x + bar.w / 2, ( dValue >= 0 ? bar.y - th / 2 - 1 : bar.y + bar.h + th / 2 + 1 ) - ( pSeries->iStyle == RMC_BAR_3D || pSeries->iStyle == RMC_BAR_3D_GRADIENT ? HB_MIN( bar.w * 0.35f, 14 ) : 0 ), 0 );
+            {
+               /* as RMChart, box over the bar with a small line */
+               REAL d = ( pSeries->iStyle == RMC_BAR_3D || pSeries->iStyle == RMC_BAR_3D_GRADIENT ) ? HB_MIN( bar.w * 0.35f, 14 ) : 0;
+               REAL fx = bar.x + bar.w / 2 + d / 2, fy = dValue >= 0 ? bar.y - d : bar.y + bar.h;
+               REAL fGap = dValue >= 0 ? -5 : 5;
+               chc_Line( dc, 0xFF000000, RMC_LINESTYLESOLID, fx, fy, fx, fy + fGap );
+               chc_LabelBox( dc, szLabel, 7, fx, fy + fGap + ( dValue >= 0 ? -1 : 1 ) * ( th + 1 ) / 2, NULL, NULL );
+            }
             else
-               chc_TextAngle( dc, szLabel, 7, HB_FALSE, 0xFF000000, ( dValue >= 0 ? bar.x + bar.w + tw / 2 + 2 : bar.x - tw / 2 - 2 ), bar.y + bar.h / 2, 0 );
+            {
+               REAL fx = dValue >= 0 ? bar.x + bar.w : bar.x, fy = bar.y + bar.h / 2;
+               REAL fGap = dValue >= 0 ? 5 : -5;
+               chc_Line( dc, 0xFF000000, RMC_LINESTYLESOLID, fx, fy, fx + fGap, fy );
+               chc_LabelBox( dc, szLabel, 7, fx + fGap + ( dValue >= 0 ? 1 : -1 ) * ( tw + 4 ) / 2, fy, NULL, NULL );
+            }
          }
       }
    }
@@ -2159,7 +2379,15 @@ static GpBrush * chc_AreaBrush( ARGB color, int iStyle, CHC_POINTF * pTop, CHC_P
    {
       case RMC_AREA_FLAT_GRADIENT_V:
       case RMC_AREA_3D_GRADIENT_V:
-         pGdipCreateLineBrushFromRect( &rc, color, light, GP_GRADIENTVERTICAL, GP_WRAPTILEFLIPXY, &brush );
+         /* as RMChart: vertical bands, each segment from color to darker */
+         if( n > 1 && x2 - x1 > n )
+         {
+            rc.X = x1;
+            rc.Width = ( x2 - x1 ) / ( n - 1 );
+            pGdipCreateLineBrushFromRect( &rc, color, chc_Shade( color, 59 ), GP_GRADIENTHORIZONTAL, GP_WRAPTILE, &brush );
+         }
+         else
+            pGdipCreateLineBrushFromRect( &rc, color, light, GP_GRADIENTVERTICAL, GP_WRAPTILEFLIPXY, &brush );
          break;
       case RMC_AREA_FLAT_GRADIENT_H:
       case RMC_AREA_3D_GRADIENT_H:
@@ -2476,7 +2704,7 @@ static void chc_LinesDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_GRIDINFO * pIn
       }
 
       if( pSeries->lLucent )
-         color = chc_Alpha( color, 150 );
+         color = chc_Alpha( color, 220 );
 
       if( lBack && ( lArea || lLight ) && nDraw > 1 )
       {
@@ -2548,9 +2776,9 @@ static void chc_LinesDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_GRIDINFO * pIn
                REAL tw, th;
                chc_TextSize( dc, szLabel, 7, HB_FALSE, &tw, &th );
                if( pInfo->lVertical )
-                  chc_TextAngle( dc, szLabel, 7, HB_FALSE, 0xFF000000, pTop[ i ].X, pTop[ i ].Y - HB_MAX( r, 2 ) - th / 2 - 1, 0 );
+                  chc_LabelBox( dc, szLabel, 7, pTop[ i ].X, pTop[ i ].Y - HB_MAX( r, 2 ) - th / 2 - 3, NULL, NULL );
                else
-                  chc_TextAngle( dc, szLabel, 7, HB_FALSE, 0xFF000000, pTop[ i ].X + HB_MAX( r, 2 ) + tw / 2 + 2, pTop[ i ].Y, 0 );
+                  chc_LabelBox( dc, szLabel, 7, pTop[ i ].X + HB_MAX( r, 2 ) + tw / 2 + 5, pTop[ i ].Y, NULL, NULL );
             }
          }
       }
@@ -2815,8 +3043,9 @@ static void chc_GridDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_BOX * pArea )
    CHC_DAXIS    defAxis, * pDA[ 2 ];
    CHC_LAXIS *  pLA = &pRegion->laxis;
    CHC_GRID *   pGrid = &pRegion->grid;
-   REAL fLeft = 4, fRight = 4, fTop = 4, fBottom = 4, tw, th, fMaxW, fMaxH;
+   REAL fLeft = 4, fRight = 4, fTop = 4, fBottom = 4, tw, th, fMaxW, fMaxH, f3D = 0;
    int  n, i, nTicks, nAxis, iBicolor;
+   HB_BOOL lBar3D = HB_FALSE;
    char szText[ 256 ];
    int  iFS;
    HB_BOOL lBold;
@@ -2978,6 +3207,8 @@ static void chc_GridDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_BOX * pArea )
          {
             fTop   = HB_MAX( fTop, 16 );
             fRight = HB_MAX( fRight, 16 );
+            if( pRegion->series[ n ].iKind == CHC_SER_BAR && ( iStyle == RMC_BAR_3D || iStyle == RMC_BAR_3D_GRADIENT ) && ! pRegion->series[ n ].lHide )
+               lBar3D = HB_TRUE;
          }
       }
       info.grid.x = pArea->x + fLeft;
@@ -2992,13 +3223,40 @@ static void chc_GridDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_BOX * pArea )
    if( info.grid.w < 10 || info.grid.h < 10 )
       return;
 
+   /* 3D bars on vertical grid: back wall, left wall and floor, as RMChart */
+   if( lBar3D && info.lVertical && pGrid->lSet && info.nCat > 0 )
+      f3D = ( REAL ) floor( HB_MIN( info.grid.w / info.nCat * 0.21f, 14 ) );
+
    /* background */
    {
       ARGB bg = chc_Color( pGrid->bgColor, 0xFFFFFFFF );
-      if( pGrid->lSet && ! chc_IsTransparent( bg ) )
+      if( f3D > 0 )
+      {
+         CHC_POINTF pt[ 4 ];
+         REAL gx = info.grid.x, gy = info.grid.y, gw = info.grid.w, gh = info.grid.h;
+         ARGB wall = chc_IsTransparent( bg ) ? 0x40C0C0C0 : chc_Dark( bg, 0.12 );
+         ARGB edge = chc_Color( pDA[ 0 ]->lineColor, 0xFF000000 );
+         /* left wall */
+         pt[ 0 ].X = gx;      pt[ 0 ].Y = gy + gh;
+         pt[ 1 ].X = gx;      pt[ 1 ].Y = gy;
+         pt[ 2 ].X = gx + f3D; pt[ 2 ].Y = gy - f3D;
+         pt[ 3 ].X = gx + f3D; pt[ 3 ].Y = gy + gh - f3D;
+         chc_FillPoly( dc, pt, 4, wall, edge, 1 );
+         /* floor */
+         pt[ 0 ].X = gx;           pt[ 0 ].Y = gy + gh;
+         pt[ 1 ].X = gx + f3D;      pt[ 1 ].Y = gy + gh - f3D;
+         pt[ 2 ].X = gx + gw + f3D; pt[ 2 ].Y = gy + gh - f3D;
+         pt[ 3 ].X = gx + gw;      pt[ 3 ].Y = gy + gh;
+         chc_FillPoly( dc, pt, 4, wall, edge, 1 );
+         /* back wall, the grid itself */
+         if( ! chc_IsTransparent( bg ) )
+            chc_FillRect( dc, bg, gx + f3D, gy - f3D, gw, gh );
+         chc_DrawRect( dc, edge, gx + f3D, gy - f3D, gw + 1, gh + 1 );
+      }
+      else if( pGrid->lSet && ! chc_IsTransparent( bg ) )
       {
          if( pGrid->lGradient )
-            chc_FillGradient( dc, 0xFFFFFFFF, bg, info.grid.x, info.grid.y, info.grid.w, info.grid.h, HB_TRUE, HB_FALSE );
+            chc_FillGradient( dc, chc_Shade( bg, 70 ), bg, info.grid.x, info.grid.y, info.grid.w, info.grid.h, HB_FALSE, HB_FALSE );
          else
             chc_FillRect( dc, bg, info.grid.x, info.grid.y, info.grid.w, info.grid.h );
       }
@@ -3011,7 +3269,7 @@ static void chc_GridDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_BOX * pArea )
          for( i = 1; i < info.nCat; i += 2 )
          {
             if( info.lVertical )
-               chc_FillRect( dc, chc_Alpha( chc_Dark( bg, 0.5 ), 40 ), info.grid.x + i * fCat, info.grid.y, fCat, info.grid.h );
+               chc_FillRect( dc, chc_Alpha( chc_Dark( bg, 0.5 ), 40 ), info.grid.x + i * fCat + f3D, info.grid.y - f3D, fCat, info.grid.h );
             else
                chc_FillRect( dc, chc_Alpha( chc_Dark( bg, 0.5 ), 40 ), info.grid.x, info.grid.y + i * fCat, info.grid.w, fCat );
          }
@@ -3024,7 +3282,7 @@ static void chc_GridDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_BOX * pArea )
             REAL f1 = ( info.lVertical ? info.grid.h : info.grid.w ) * i / ( nTicks - 1 );
             REAL f2 = ( info.lVertical ? info.grid.h : info.grid.w ) / ( nTicks - 1 );
             if( info.lVertical )
-               chc_FillRect( dc, chc_Alpha( chc_Dark( bg, 0.5 ), 40 ), info.grid.x, info.grid.y + info.grid.h - f1 - f2, info.grid.w, f2 );
+               chc_FillRect( dc, chc_Alpha( chc_Dark( bg, 0.5 ), 40 ), info.grid.x + f3D, info.grid.y + info.grid.h - f1 - f2 - f3D, info.grid.w, f2 );
             else
                chc_FillRect( dc, chc_Alpha( chc_Dark( bg, 0.5 ), 40 ), info.grid.x + f1, info.grid.y, f2, info.grid.h );
          }
@@ -3042,7 +3300,7 @@ static void chc_GridDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_BOX * pArea )
       for( i = 1; i < info.nCat; i++ )
       {
          if( info.lVertical )
-            chc_Line( dc, lineColor, pLA->iLineStyle, info.grid.x + i * fCat, info.grid.y, info.grid.x + i * fCat, info.grid.y + info.grid.h );
+            chc_Line( dc, lineColor, pLA->iLineStyle, info.grid.x + i * fCat + f3D, info.grid.y - f3D, info.grid.x + i * fCat + f3D, info.grid.y + info.grid.h - f3D );
          else
             chc_Line( dc, lineColor, pLA->iLineStyle, info.grid.x, info.grid.y + i * fCat, info.grid.x + info.grid.w, info.grid.y + i * fCat );
       }
@@ -3111,7 +3369,13 @@ static void chc_GridDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_BOX * pArea )
          REAL fPos = ( info.lVertical ? info.grid.h : info.grid.w ) * i / ( nTicks - 1 );
          if( n == 0 && i > 0 && i < nTicks - 1 )
          {
-            if( info.lVertical )
+            if( info.lVertical && f3D > 0 )
+            {
+               /* on the back wall, and across the left wall */
+               chc_Line( dc, lineColor, pAxis->iLineStyle, info.grid.x + f3D, info.grid.y + info.grid.h - fPos - f3D, info.grid.x + info.grid.w + f3D, info.grid.y + info.grid.h - fPos - f3D );
+               chc_Line( dc, lineColor, RMC_LINESTYLESOLID, info.grid.x, info.grid.y + info.grid.h - fPos, info.grid.x + f3D, info.grid.y + info.grid.h - fPos - f3D );
+            }
+            else if( info.lVertical )
                chc_Line( dc, lineColor, pAxis->iLineStyle, info.grid.x, info.grid.y + info.grid.h - fPos, info.grid.x + info.grid.w - 1, info.grid.y + info.grid.h - fPos );
             else
                chc_Line( dc, lineColor, pAxis->iLineStyle, info.grid.x + fPos, info.grid.y, info.grid.x + fPos, info.grid.y + info.grid.h - 1 );
@@ -3352,7 +3616,7 @@ static void chc_XYDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_BOX * pArea )
       if( pGrid->lSet && ! chc_IsTransparent( bg ) )
       {
          if( pGrid->lGradient )
-            chc_FillGradient( dc, 0xFFFFFFFF, bg, grid.x, grid.y, grid.w, grid.h, HB_TRUE, HB_FALSE );
+            chc_FillGradient( dc, chc_Shade( bg, 70 ), bg, grid.x, grid.y, grid.w, grid.h, HB_FALSE, HB_FALSE );
          else
             chc_FillRect( dc, bg, grid.x, grid.y, grid.w, grid.h );
       }
@@ -3498,7 +3762,7 @@ static void chc_XYDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_BOX * pArea )
          if( *szLabel )
          {
             chc_TextSize( dc, szLabel, 7, HB_FALSE, &tw, &th );
-            chc_TextAngle( dc, szLabel, 7, HB_FALSE, 0xFF000000, pt[ i ].X, pt[ i ].Y - HB_MAX( r, 2 ) - th / 2 - 1, 0 );
+            chc_LabelBox( dc, szLabel, 7, pt[ i ].X, pt[ i ].Y - HB_MAX( r, 2 ) - th / 2 - 3, NULL, NULL );
          }
       }
       hb_xfree( pt );
@@ -3535,7 +3799,7 @@ static void chc_PieWall( CHC_DC * dc, CHC_SLICE * pSlice, CHC_BOX * pEll, REAL f
    {
       CHC_RECTF rc;
       rc.X = x - 1; rc.Y = y; rc.Width = pEll->w + 2; rc.Height = pEll->h + fDepth;
-      pGdipCreateLineBrushFromRect( &rc, chc_Dark( color, 0.45 ), chc_Light( color, 0.1 ), GP_GRADIENTHORIZONTAL, GP_WRAPTILEFLIPXY, &brush );
+      pGdipCreateLineBrushFromRect( &rc, chc_Dark( color, 0.45 ), chc_Dark( color, 0.15 ), GP_GRADIENTHORIZONTAL, GP_WRAPTILEFLIPXY, &brush );
       pGdipSetLineSigmaBlend( brush, 0.4f, 1.0f );
    }
    else
@@ -3711,7 +3975,7 @@ static void chc_PyramidDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_SERIES * pSe
       fLayerH = ( REAL ) ( ( yBase - yTop ) * ( t1 - t0 ) );
       yMid = ( ptL.Y + ptR.Y ) / 2;
       if( tw + 8 <= fMidW && th + 2 <= fLayerH )
-         chc_TextAngle( dc, szText, 8, HB_FALSE, chc_Contrast( l3D ? chc_Light( color, 0.2 ) : color ), cx, yMid, 0 );
+         chc_LabelBox( dc, szText, 8, cx, yMid, NULL, NULL );
       else
       {
          CHC_POINTF ptEdge = chc_EdgePoint( &baseR, &apex, ( t0 + t1 ) / 2 );
@@ -3781,32 +4045,31 @@ static void chc_GridlessDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_SERIES * pS
       dStart = pSeries->dStartAngle - 90;
 
    /* space for labels outside */
+   /* boxes are centered on the border, half outside */
    chc_TextSize( dc, "Ag", 8, HB_FALSE, &tw, &th );
-   if( lOnLabels )
+   fMarginX = 10;
+   fMarginY = 10;
+   for( n = 0; n < nData; n++ )
    {
-      REAL fMax = 0;
-      for( n = 0; n < nData; n++ )
-      {
+      *szText = '\0';
+      if( lOnLabels )
          chc_ListItem( pRegion->legend.szText, n, szText, sizeof( szText ) );
-         chc_ValueText( pSeries, pSeries->pData[ n ], dTotal, chc_Decimals( pSeries->pData[ n ] ), "", szValue, sizeof( szValue ) );
-         if( *szValue )
-            hb_strncat( hb_strncat( szText, " ", sizeof( szText ) - 1 ), szValue, sizeof( szText ) - 1 );
-         chc_TextSize( dc, szText, 8, HB_FALSE, &tw, &th );
-         fMax = HB_MAX( fMax, tw );
+      chc_ValueText( pSeries, pSeries->pData[ n ], dTotal, chc_Decimals( pSeries->pData[ n ] ), "", szValue, sizeof( szValue ) );
+      if( *szValue )
+         hb_strncat( hb_strncat( szText, *szText ? "\n" : "", sizeof( szText ) - 1 ), szValue, sizeof( szText ) - 1 );
+      if( *szText )
+      {
+         REAL w, h;
+         chc_TextSize( dc, szText, 8, HB_FALSE, &w, &h );
+         fMarginX = HB_MAX( fMarginX, w / 2 + 8 );
+         fMarginY = HB_MAX( fMarginY, h / 2 + 8 );
       }
-      fMarginX = fMax + 20;
-      fMarginY = th * 2 + 10;
-   }
-   else
-   {
-      fMarginX = 10;
-      fMarginY = 10;
    }
 
    /* diameter */
    fW = pArea->w - 2 * fMarginX;
    fH = pArea->h - 2 * fMarginY;
-   fTilt = l3D ? 0.55f : 1.0f;
+   fTilt = l3D ? 0.7f : 1.0f;
    if( iAlign == RMC_HALF_TOP || iAlign == RMC_HALF_BOTTOM )
       fD = HB_MIN( fW, ( fH / ( fTilt / 2 + ( l3D ? 0.12f : 0 ) ) ) );
    else if( iAlign == RMC_HALF_LEFT || iAlign == RMC_HALF_RIGHT )
@@ -3816,7 +4079,7 @@ static void chc_GridlessDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_SERIES * pS
    fD *= 0.92f;
    if( fD < 10 )
       return;
-   fDepth   = l3D ? HB_MIN( fD * 0.10f, 40 ) : 0;
+   fDepth   = l3D ? HB_MIN( fD * 0.11f, 45 ) : 0;
    fExplode = fD * 0.06f;
    fD -= fExplode * 2;
 
@@ -3949,17 +4212,25 @@ static void chc_GridlessDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_SERIES * pS
          pGdipCreatePath( GP_FILLALTERNATE, &ellPath );
          pGdipAddPathEllipse( ellPath, x, y, ell.w, ell.h );
          pGdipCreatePathGradientFromPath( ellPath, &brush );
-         pGdipSetPathGradientCenterColor( brush, chc_Light( pSlice->color, 0.7 ) );
+         pGdipSetPathGradientCenterColor( brush, pSlice->color );
          pGdipSetPathGradientSurroundColorsWithCount( brush, &surround, &nCount );
-         aBlend[ 0 ] = chc_Light( pSlice->color, 0.35 );
-         aBlend[ 1 ] = chc_Dark( pSlice->color, 0.25 );
-         aBlend[ 2 ] = pSlice->color;
-         aBlend[ 3 ] = chc_Light( pSlice->color, 0.7 );
+         /* as RMChart: dark border, light ring near the border, color on center */
+         /* 3D is stronger: whiter ring and darker border */
+         aPos[ 1 ] = l3D ? 0.03f : 0.06f;
+         aPos[ 2 ] = l3D ? 0.11f : 0.12f;
+         aBlend[ 0 ] = chc_Shade( pSlice->color, l3D ? 88 : 42 );
+         aBlend[ 1 ] = l3D ? chc_Light( pSlice->color, 0.4 ) : pSlice->color;
+         aBlend[ 2 ] = l3D ? chc_Light( pSlice->color, 0.82 ) : chc_Shade( pSlice->color, -59 );
+         aBlend[ 3 ] = pSlice->color;
          if( lDonut && ell.w > 0 )
          {
-            /* light in the middle of the ring, the center is a hole */
-            aPos[ 2 ] = ( 1.0f - inner.w / ell.w ) * 0.5f;
-            aBlend[ 2 ] = chc_Light( pSlice->color, 0.6 );
+            /* as RMChart, a tube: dark outside, light after the middle of the ring, center is a hole */
+            REAL fRing = 1.0f - inner.w / ell.w;
+            aPos[ 1 ] = fRing * 0.55f;
+            aPos[ 2 ] = fRing;
+            aBlend[ 0 ] = chc_Shade( pSlice->color, 55 );
+            aBlend[ 1 ] = chc_Shade( pSlice->color, -58 );
+            aBlend[ 2 ] = chc_Shade( pSlice->color, -15 );
             aBlend[ 3 ] = pSlice->color;
          }
          pGdipSetPathGradientPresetBlend( brush, aBlend, aPos, 4 );
@@ -3994,35 +4265,17 @@ static void chc_GridlessDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_SERIES * pS
       REAL   rx = ell.w / 2, ry = ell.h / 2, px, py;
 
       chc_ValueText( pSeries, pSeries->pData[ n ], dTotal, chc_Decimals( pSeries->pData[ n ] ), "", szValue, sizeof( szValue ) );
+      *szText = '\0';
       if( lOnLabels )
-      {
-         REAL ex, ey, lx;
-         GpPen * pen;
          chc_ListItem( pRegion->legend.szText, n, szText, sizeof( szText ) );
-         if( *szValue )
-            hb_strncat( hb_strncat( szText, " ", sizeof( szText ) - 1 ), szValue, sizeof( szText ) - 1 );
-         if( *szText == '\0' )
-            continue;
-         px = cx + pSlice->dx + ( REAL ) cos( dMid ) * rx;
-         py = cy + pSlice->dy + ( REAL ) sin( dMid ) * ry + ( sin( dMid ) > 0 ? fDepth : 0 );
-         ex = cx + pSlice->dx + ( REAL ) cos( dMid ) * ( rx + 14 );
-         ey = cy + pSlice->dy + ( REAL ) sin( dMid ) * ( ry + 14 ) + ( sin( dMid ) > 0 ? fDepth : 0 );
-         lx = ex + ( cos( dMid ) >= 0 ? 10 : -10 );
-         pen = chc_Pen( 0xFF606060, 1, RMC_LINESTYLESOLID );
-         pGdipDrawLine( dc->g, pen, px, py, ex, ey );
-         pGdipDrawLine( dc->g, pen, ex, ey, lx, ey );
-         pGdipDeletePen( pen );
-         chc_TextSize( dc, szText, 8, HB_FALSE, &tw, &th );
-         chc_TextRect( dc, szText, 8, HB_FALSE, chc_Color( pRegion->legend.textColor, 0xFF000000 ),
-            cos( dMid ) >= 0 ? lx + 2 : lx - 2 - tw, ey - th / 2, tw, th, GP_ALIGNNEAR, GP_ALIGNCENTER );
-      }
-      else if( *szValue )
-      {
-         REAL fR = lDonut ? 0.75f : 0.62f;
-         px = cx + pSlice->dx + ( REAL ) cos( dMid ) * rx * fR;
-         py = cy + pSlice->dy + ( REAL ) sin( dMid ) * ry * fR;
-         chc_TextAngle( dc, szValue, 8, HB_TRUE, chc_Contrast( pSlice->color ), px, py, 0 );
-      }
+      if( *szValue )
+         hb_strncat( hb_strncat( szText, *szText ? "\n" : "", sizeof( szText ) - 1 ), szValue, sizeof( szText ) - 1 );
+      if( *szText == '\0' )
+         continue;
+      /* as RMChart, box on the border */
+      px = cx + pSlice->dx + ( REAL ) cos( dMid ) * rx;
+      py = cy + pSlice->dy + ( REAL ) sin( dMid ) * ry;
+      chc_LabelBox( dc, szText, 8, px, py, NULL, NULL );
    }
    hb_xfree( pSlices );
 }
