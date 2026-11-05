@@ -13,3 +13,4 @@
 
 source/ze_chartclass.prg
 source/ze_chartengine.c
+source/ze_chartrmcfile.prg
