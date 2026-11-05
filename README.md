@@ -32,7 +32,7 @@ Phase 1, work in progress.
 | Printer (EMF+, EMF, BMP), clipboard (EMF and bitmap) | done |
 | XY with X/Y axes, high-low (OHLC, candlestick), volume bars, pyramid flat and 3D | done |
 | Custom objects (`RMC_CO*`), tooltips, zoom | next |
-| `.rmc` files | last |
+| `.rmc` files: `RMC_CreateChartFromFile()`, `RMC_GetChartSizeFromFile()` (data in the file or in a `.csv`) | basic |
 
 Functions not implemented yet exist and return 0, so programs link and run.
 
@@ -86,6 +86,8 @@ methods are accepted too. The `RMC_*()` functions can also be called directly, w
 - `CHC_ClipParent( hWnd )` or `oChart:ClipParent()` sets WS_CLIPCHILDREN on the window and its
   parents, only for a console GT (GTWVT/GTWVG), so the console repaint does not paint over the chart.
 - `RMC_CreateChartOnDC()` draws on a DC received, `RMC_Split*()` are simple Harbour functions.
+- Automatic scale (min = max = 0): from the data, zero is not forced, as RMChart, but the steps can be different.
+- `.rmc` files: custom objects are not drawn yet, `RMC_WriteRMCFile()` is not done.
 - `RMC_Draw2Printer()` with hDC 0 shows the printer dialog and prints one page. With a hDC it only
   draws, StartDoc()/StartPage() are of the caller. Position and size in mm, size 0 = printable width.
 

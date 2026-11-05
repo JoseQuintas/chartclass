@@ -1095,31 +1095,50 @@ static GpPath * chc_RoundRectPath( REAL x, REAL y, REAL w, REAL h, REAL r )
 /* ---------------------------------------------------------------- text */
 
 /* "text\9b" = 9 points bold, at end of text */
-static void chc_TextFormat( const char * szText, char * szDest, int iSize, int * piFontSize, HB_BOOL * plBold )
+/* text ending with \ + options: font size, b = bold, l c r = alignment (footer), as RMChart "Text\9bl" */
+static void chc_TextFormatAlign( const char * szText, char * szDest, int iSize, int * piFontSize, HB_BOOL * plBold, int * piAlign )
 {
-   const char * pBack;
+   char * pBack;
 
    hb_strncpy( szDest, szText ? szText : "", iSize - 1 );
    pBack = strrchr( szDest, '\\' );
-   if( pBack && pBack[ 1 ] >= '0' && pBack[ 1 ] <= '9' )
+   if( pBack && pBack[ 1 ] != '\0' )
    {
       const char * p = pBack + 1;
-      int iFont = 0;
+      int iFont = 0, iAlign = -1;
+      HB_BOOL lBold = HB_FALSE;
 
       while( *p >= '0' && *p <= '9' )
          iFont = iFont * 10 + ( *p++ - '0' );
       if( *p == 'b' || *p == 'B' )
       {
-         *plBold = HB_TRUE;
+         lBold = HB_TRUE;
          p++;
       }
+      if( *p == 'l' || *p == 'L' )
+         iAlign = GP_ALIGNNEAR;
+      else if( *p == 'c' || *p == 'C' )
+         iAlign = GP_ALIGNCENTER;
+      else if( *p == 'r' || *p == 'R' )
+         iAlign = GP_ALIGNFAR;
+      if( iAlign >= 0 )
+         p++;
       if( *p == '\0' )
       {
          if( iFont > 0 )
             *piFontSize = iFont;
-         szDest[ pBack - szDest ] = '\0';
+         if( lBold )
+            *plBold = HB_TRUE;
+         if( iAlign >= 0 && piAlign )
+            *piAlign = iAlign;
+         *pBack = '\0';
       }
    }
+}
+
+static void chc_TextFormat( const char * szText, char * szDest, int iSize, int * piFontSize, HB_BOOL * plBold )
+{
+   chc_TextFormatAlign( szText, szDest, iSize, piFontSize, plBold, NULL );
 }
 
 static GpFont * chc_Font( CHC_DC * dc, int iSize, HB_BOOL lBold )
@@ -2068,10 +2087,7 @@ static void chc_AutoScale( double dLow, double dHigh, int nTicks, double * pMin,
 {
    double dRange, dStep, dMag, dNorm;
 
-   if( dLow > 0 )
-      dLow = 0;
-   if( dHigh < 0 )
-      dHigh = 0;
+   /* as RMChart, the range comes from the data, zero is not forced */
    if( dHigh <= dLow )
       dHigh = dLow + 1;
    if( nTicks < 2 )
@@ -2941,13 +2957,17 @@ static void chc_DataRange( CHC_REGION * pRegion, int iAxis, double * pLow, doubl
    int n, i, nMax = 0;
    double * pPos, * pNeg, * pArea;
 
-   *pLow = 0;
-   *pHigh = 0;
+   /* from the data, as RMChart, zero only if there is no data */
+   *pLow = 1e300;
+   *pHigh = -1e300;
    *pl100 = HB_FALSE;
    for( n = 0; n < pRegion->nSeries; n++ )
       nMax = HB_MAX( nMax, pRegion->series[ n ].nData );
    if( nMax == 0 )
+   {
+      *pLow = *pHigh = 0;
       return;
+   }
    pPos = ( double * ) hb_xgrab( sizeof( double ) * nMax );
    pNeg = ( double * ) hb_xgrab( sizeof( double ) * nMax );
    pArea = ( double * ) hb_xgrab( sizeof( double ) * nMax );
@@ -3001,6 +3021,8 @@ static void chc_DataRange( CHC_REGION * pRegion, int iAxis, double * pLow, doubl
    hb_xfree( pPos );
    hb_xfree( pNeg );
    hb_xfree( pArea );
+   if( *pLow > *pHigh )
+      *pLow = *pHigh = 0;
 }
 
 static void chc_AxisLabel( CHC_DAXIS * pAxis, double dMin, double dMax, int iTick, char * szDest, int iSize )
@@ -4347,8 +4369,13 @@ static void chc_RegionDraw( CHC_DC * dc, CHC_REGION * pRegion )
    /* footer */
    if( pRegion->szFooter && *pRegion->szFooter )
    {
-      chc_TextSize( dc, pRegion->szFooter, 7, HB_FALSE, &tw, &th );
-      chc_TextRect( dc, pRegion->szFooter, 7, HB_FALSE, 0xFF404040, area.x + 2, area.y + area.h - th, area.w - 4, th, GP_ALIGNFAR, GP_ALIGNCENTER );
+      char szFooter[ 256 ];
+      int iFooterSize = 7, iFooterAlign = GP_ALIGNFAR;
+      HB_BOOL lFooterBold = HB_FALSE;
+
+      chc_TextFormatAlign( pRegion->szFooter, szFooter, sizeof( szFooter ), &iFooterSize, &lFooterBold, &iFooterAlign );
+      chc_TextSize( dc, szFooter, iFooterSize, lFooterBold, &tw, &th );
+      chc_TextRect( dc, szFooter, iFooterSize, lFooterBold, 0xFF404040, area.x + 2, area.y + area.h - th, area.w - 4, th, iFooterAlign, GP_ALIGNCENTER );
       area.h -= th + 2;
    }
 
@@ -5505,8 +5532,6 @@ CHC_TODO( RMC_COPOLYGON )
 CHC_TODO( RMC_COSYMBOL )
 CHC_TODO( RMC_COTEXT )
 CHC_TODO( RMC_COVISIBLE )
-CHC_TODO( RMC_CREATECHARTFROMFILE )
-CHC_TODO( RMC_GETCHARTSIZEFROMFILE )
 CHC_TODO( RMC_GETDATA )
 CHC_TODO( RMC_GETDATACOUNT )
 CHC_TODO( RMC_GETDATALOCATION )
