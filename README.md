@@ -32,7 +32,7 @@ Phase 1, work in progress.
 | Printer (EMF+, EMF, BMP), clipboard (EMF and bitmap) | done |
 | XY with X/Y axes, high-low (OHLC, candlestick), volume bars, pyramid flat and 3D | done |
 | Custom objects (`RMC_CO*`), tooltips, zoom | next |
-| `.rmc` files: `RMC_CreateChartFromFile()`, `RMC_GetChartSizeFromFile()` (data in the file or in a `.csv`) | basic |
+| `.rmc` files: `RMC_CreateChartFromFile()`, `RMC_GetChartSizeFromFile()`, `RMC_File2Source()` (to Harbour source) (data in the file or in a `.csv`) | basic |
 
 Functions not implemented yet exist and return 0, so programs link and run.
 
@@ -96,6 +96,9 @@ methods are accepted too. The `RMC_*()` functions can also be called directly, w
 - `tests/testpng.prg` - charts saved to PNG files, no window. The same source compiles with
   rmchartclass, to compare.
 - `tests/testwvt.prg` - charts on a GTWVT window.
+- `tests/rmcsamples.prg` - 23 charts of the same kind of the RMChart `.rmc` samples, with fictitious texts and data,
+  created by `tests/rmc2prg.prg` (`RMC_File2Source()`). `tests/testrmcfivewin.prg` shows them in tabs,
+  `tests/testrmcsamples.prg` saves them to PNG.
 - `tests/testfivewin.prg` - FiveWin dialog with FOLDEREX, one chart on each of 16 tabs.
 - `tests/testhwgui.prg` - hwgui dialog with TAB, one chart on a PANEL of each of 16 pages.
 - `tests/testhmg3.prg`, `tests/testhmge.prg`, `tests/testoohg.prg` - HMG 3, HMG Extended and OOHG window

@@ -4,6 +4,7 @@ ZE_CHARTRMCFILE - read RMChart *.rmc files (RMC content string)
 
 RMC_CreateChartFromFile( hParent, nCtrlId, nX, nY, lExportOnly, cRMCFile ) --> nResult
 RMC_GetChartSizeFromFile( cRMCFile, @nWidth, @nHeight ) --> nResult
+RMC_File2Source( cRMCFile, [bText], [bData] ) --> cSource with the same RMC_*() calls
 
 cRMCFile is a file name or the content string itself.
 Content: fields separated by "|", each field = 5 digit code + value.
@@ -18,6 +19,8 @@ Not used yet: custom objects, watermark, tooltips, start angle, hidden series.
 
 #include "ze_chartclass.ch"
 
+STATIC s_hSource := Nil
+
 FUNCTION RMC_CreateChartFromFile( hParent, nCtrlId, nX, nY, lExportOnly, cRMCFile )
 
    LOCAL hRmc, nRegion, nSeries, nResult, cPath := ""
@@ -30,9 +33,11 @@ FUNCTION RMC_CreateChartFromFile( hParent, nCtrlId, nX, nY, lExportOnly, cRMCFil
    IF ValType( lExportOnly ) == "N"
       lExportOnly := ( lExportOnly != 0 )
    ENDIF
-   hb_Default( @lExportOnly, .F. )
+   IF ! HB_ISSTRING( lExportOnly ) // string = name of variable, RMC_File2Source()
+      hb_Default( @lExportOnly, .F. )
+   ENDIF
 
-   nResult := RMC_CreateChart( hParent, nCtrlId, nX, nY, RmcN( hRmc, 3 ), RmcN( hRmc, 4 ), ;
+   nResult := RmcDo( "RMC_CreateChart", hParent, nCtrlId, nX, nY, RmcN( hRmc, 3 ), RmcN( hRmc, 4 ), ;
       RmcN( hRmc, 8 ), RmcN( hRmc, 7 ), lExportOnly, RmcFile( RmcC( hRmc, 10 ), cPath ), RmcC( hRmc, 11 ), ;
       RmcN( hRmc, 12 ), RmcN( hRmc, 13 ) )
    IF nResult < 0
@@ -65,55 +70,55 @@ STATIC FUNCTION RmcRegion( hRmc, nCtrlId, nRegion, cPath )
 
    HB_SYMBOL_UNUSED( cPath )
 
-   RMC_AddRegion( nCtrlId, RmcN( hRmc, n + 3 ), RmcN( hRmc, n + 4 ), RmcN( hRmc, n + 5 ), RmcN( hRmc, n + 6 ), ;
+   RmcDo( "RMC_AddRegion", nCtrlId, RmcN( hRmc, n + 3 ), RmcN( hRmc, n + 4 ), RmcN( hRmc, n + 5 ), RmcN( hRmc, n + 6 ), ;
       RmcC( hRmc, n + 180 ), RmcN( hRmc, n + 2 ) != 0 )
    IF hb_HHasKey( hRmc, n + 181 )
-      RMC_AddCaption( nCtrlId, nRegion, RmcC( hRmc, n + 181 ), RmcN( hRmc, n + 51 ), RmcN( hRmc, n + 52 ), ;
+      RmcDo( "RMC_AddCaption", nCtrlId, nRegion, RmcC( hRmc, n + 181 ), RmcN( hRmc, n + 51 ), RmcN( hRmc, n + 52 ), ;
          RmcN( hRmc, n + 9 ), RmcN( hRmc, n + 10 ) != 0 )
    ENDIF
    IF RmcN( hRmc, n + 11 ) != 0
-      RMC_AddGrid( nCtrlId, nRegion, RmcN( hRmc, n + 53 ), RmcN( hRmc, n + 13 ) != 0, ;
+      RmcDo( "RMC_AddGrid", nCtrlId, nRegion, RmcN( hRmc, n + 53 ), RmcN( hRmc, n + 13 ) != 0, ;
          RmcN( hRmc, n + 14 ), RmcN( hRmc, n + 15 ), RmcN( hRmc, n + 16 ), RmcN( hRmc, n + 17 ), RmcN( hRmc, n + 12 ) )
    ENDIF
    IF RmcN( hRmc, n + 11 ) == 2
       // XY: first and second X/Y axis
-      RMC_AddXAxis( nCtrlId, nRegion, RmcN( hRmc, n + 76 ), RmcN( hRmc, n + 68 ), RmcN( hRmc, n + 69 ), ;
+      RmcDo( "RMC_AddXAxis", nCtrlId, nRegion, RmcN( hRmc, n + 76 ), RmcN( hRmc, n + 68 ), RmcN( hRmc, n + 69 ), ;
          RmcN( hRmc, n + 70 ), RmcN( hRmc, n + 71 ), RmcN( hRmc, n + 77 ), RmcN( hRmc, n + 78 ), RmcN( hRmc, n + 79 ), ;
          RmcN( hRmc, n + 75 ), RmcC( hRmc, n + 188 ), RmcC( hRmc, n + 189 ), RmcC( hRmc, n + 197 ), RmcN( hRmc, n + 80 ) )
-      RMC_AddYAxis( nCtrlId, nRegion, RmcN( hRmc, n + 89 ), RmcN( hRmc, n + 81 ), RmcN( hRmc, n + 82 ), ;
+      RmcDo( "RMC_AddYAxis", nCtrlId, nRegion, RmcN( hRmc, n + 89 ), RmcN( hRmc, n + 81 ), RmcN( hRmc, n + 82 ), ;
          RmcN( hRmc, n + 83 ), RmcN( hRmc, n + 84 ), RmcN( hRmc, n + 90 ), RmcN( hRmc, n + 91 ), RmcN( hRmc, n + 92 ), ;
          RmcN( hRmc, n + 88 ), RmcC( hRmc, n + 190 ), RmcC( hRmc, n + 191 ), RmcC( hRmc, n + 198 ), RmcN( hRmc, n + 93 ) )
       IF RmcN( hRmc, n + 100 ) != 0
-         RMC_AddXAxis( nCtrlId, nRegion, RmcN( hRmc, n + 100 ), RmcN( hRmc, n + 95 ), RmcN( hRmc, n + 96 ), ;
+         RmcDo( "RMC_AddXAxis", nCtrlId, nRegion, RmcN( hRmc, n + 100 ), RmcN( hRmc, n + 95 ), RmcN( hRmc, n + 96 ), ;
             RmcN( hRmc, n + 97 ), RmcN( hRmc, n + 98 ), RmcN( hRmc, n + 101 ), RmcN( hRmc, n + 102 ), RmcN( hRmc, n + 103 ), ;
             RmcN( hRmc, n + 99 ), RmcC( hRmc, n + 192 ), RmcC( hRmc, n + 193 ), "", 0 )
       ENDIF
       IF RmcN( hRmc, n + 109 ) != 0
-         RMC_AddYAxis( nCtrlId, nRegion, RmcN( hRmc, n + 109 ), RmcN( hRmc, n + 104 ), RmcN( hRmc, n + 105 ), ;
+         RmcDo( "RMC_AddYAxis", nCtrlId, nRegion, RmcN( hRmc, n + 109 ), RmcN( hRmc, n + 104 ), RmcN( hRmc, n + 105 ), ;
             RmcN( hRmc, n + 106 ), RmcN( hRmc, n + 107 ), RmcN( hRmc, n + 110 ), RmcN( hRmc, n + 111 ), RmcN( hRmc, n + 112 ), ;
             RmcN( hRmc, n + 108 ), RmcC( hRmc, n + 194 ), RmcC( hRmc, n + 195 ), "", 0 )
       ENDIF
    ELSEIF RmcN( hRmc, n + 11 ) == 1
       IF hb_HHasKey( hRmc, n + 18 )
-         RMC_AddDataAxis( nCtrlId, nRegion, RmcN( hRmc, n + 54 ), RmcN( hRmc, n + 20 ), RmcN( hRmc, n + 21 ), ;
+         RmcDo( "RMC_AddDataAxis", nCtrlId, nRegion, RmcN( hRmc, n + 54 ), RmcN( hRmc, n + 20 ), RmcN( hRmc, n + 21 ), ;
             RmcN( hRmc, n + 22 ), RmcN( hRmc, n + 23 ), RmcN( hRmc, n + 56 ), RmcN( hRmc, n + 57 ), RmcN( hRmc, n + 58 ), ;
             RmcN( hRmc, n + 27 ), RmcC( hRmc, n + 183 ), RmcC( hRmc, n + 184 ), RmcC( hRmc, n + 201 ), RmcN( hRmc, n + 59 ) )
          IF RmcN( hRmc, n + 28 ) > 0
             // second data axis, only these values can be different
-            RMC_AddDataAxis( nCtrlId, nRegion, iif( RmcN( hRmc, n + 94 ) == 0, RMC_DATAAXISRIGHT, RmcN( hRmc, n + 94 ) ), ;
+            RmcDo( "RMC_AddDataAxis", nCtrlId, nRegion, iif( RmcN( hRmc, n + 94 ) == 0, RMC_DATAAXISRIGHT, RmcN( hRmc, n + 94 ) ), ;
                RmcN( hRmc, n + 30 ), RmcN( hRmc, n + 31 ), RmcN( hRmc, n + 22 ), RmcN( hRmc, n + 23 ), ;
                RmcN( hRmc, n + 56 ), RmcN( hRmc, n + 57 ), RmcN( hRmc, n + 58 ), ;
                RmcN( hRmc, n + 32 ), RmcC( hRmc, n + 185 ), RmcC( hRmc, n + 186 ), "", 0 )
          ENDIF
       ENDIF
       IF hb_HHasKey( hRmc, n + 33 )
-         RMC_AddLabelAxis( nCtrlId, nRegion, RmcC( hRmc, n + 187 ), 1, RmcN( hRmc, n + 35 ), RmcN( hRmc, n + 55 ), ;
+         RmcDo( "RMC_AddLabelAxis", nCtrlId, nRegion, RmcC( hRmc, n + 187 ), 1, RmcN( hRmc, n + 35 ), RmcN( hRmc, n + 55 ), ;
             RmcN( hRmc, n + 37 ), RmcN( hRmc, n + 60 ), RmcN( hRmc, n + 50 ), RmcN( hRmc, n + 61 ), RmcN( hRmc, n + 62 ), ;
             RmcC( hRmc, n + 196 ) )
       ENDIF
    ENDIF
    IF hb_HHasKey( hRmc, n + 182 )
-      RMC_AddLegend( nCtrlId, nRegion, RmcC( hRmc, n + 182 ), RmcN( hRmc, n + 63 ), RmcN( hRmc, n + 64 ), ;
+      RmcDo( "RMC_AddLegend", nCtrlId, nRegion, RmcC( hRmc, n + 182 ), RmcN( hRmc, n + 63 ), RmcN( hRmc, n + 64 ), ;
          RmcN( hRmc, n + 65 ), RmcN( hRmc, n + 66 ), RmcN( hRmc, n + 46 ), RmcN( hRmc, n + 47 ) != 0 )
    ENDIF
 
@@ -129,28 +134,28 @@ STATIC FUNCTION RmcSeries( hRmc, nCtrlId, nRegion, nSeries, n, cPath )
    nAxis  := RmcN( hRmc, n + 11 ) + 1 // saved as axis - 1
    DO CASE
    CASE nType >= RMC_BARSINGLE .AND. nType <= RMC_FLOATINGBARGROUP
-      RMC_AddBarSeries( nCtrlId, nRegion, aData, Len( aData ), nType, RmcN( hRmc, n + 4 ), RmcN( hRmc, n + 8 ) != 0, ;
+      RmcDo( "RMC_AddBarSeries", nCtrlId, nRegion, aData, Len( aData ), nType, RmcN( hRmc, n + 4 ), RmcN( hRmc, n + 8 ) != 0, ;
          iif( RmcN( hRmc, n + 28 ) == 1, RMC_COLOR_TRANSPARENT, RmcN( hRmc, n + 19 ) ), ; // 28 = one color by bar
          RmcN( hRmc, n + 10 ) != 0, nAxis, RmcN( hRmc, n + 12 ), Max( RmcN( hRmc, n + 13 ), 1 ), ;
          RmcN( hRmc, n + 20 ) )
       // colors by bar, 0 = series color
       FOR nCont = 1 TO Len( aColor )
          IF aColor[ nCont ] != 0
-            RMC_SetSeriesColor( nCtrlId, nRegion, nSeries, aColor[ nCont ], nCont )
+            RmcDo( "RMC_SetSeriesColor", nCtrlId, nRegion, nSeries, aColor[ nCont ], nCont )
          ENDIF
       NEXT
    CASE nType >= RMC_LINE .AND. nType <= RMC_AREA_STACKED100
-      RMC_AddLineSeries( nCtrlId, nRegion, aData, Len( aData ), aPPC, Len( aPPC ), nType, RmcN( hRmc, n + 4 ), ;
+      RmcDo( "RMC_AddLineSeries", nCtrlId, nRegion, aData, Len( aData ), aPPC, Len( aPPC ), nType, RmcN( hRmc, n + 4 ), ;
          RmcN( hRmc, n + 6 ), RmcN( hRmc, n + 8 ) != 0, RmcN( hRmc, n + 19 ), RmcN( hRmc, n + 14 ), nAxis, ;
          RmcN( hRmc, n + 12 ), RmcN( hRmc, n + 20 ) )
    CASE nType == RMC_VOLUMEBAR
-      RMC_AddVolumeBarSeries( nCtrlId, nRegion, aData, Len( aData ), aPPC, Len( aPPC ), RmcN( hRmc, n + 19 ), nAxis )
+      RmcDo( "RMC_AddVolumeBarSeries", nCtrlId, nRegion, aData, Len( aData ), aPPC, Len( aPPC ), RmcN( hRmc, n + 19 ), nAxis )
    CASE nType == RMC_HIGHLOW
       ASize( aColor, 2 )
-      RMC_AddHighLowSeries( nCtrlId, nRegion, aData, Len( aData ), aPPC, Len( aPPC ), RmcN( hRmc, n + 4 ), nAxis, ;
+      RmcDo( "RMC_AddHighLowSeries", nCtrlId, nRegion, aData, Len( aData ), aPPC, Len( aPPC ), RmcN( hRmc, n + 4 ), nAxis, ;
          hb_DefaultValue( aColor[ 1 ], 0 ), hb_DefaultValue( aColor[ 2 ], 0 ) )
    CASE nType == RMC_GRIDLESS
-      RMC_AddGridlessSeries( nCtrlId, nRegion, aData, Len( aData ), aColor, Len( aColor ), RmcN( hRmc, n + 4 ), ;
+      RmcDo( "RMC_AddGridlessSeries", nCtrlId, nRegion, aData, Len( aData ), aColor, Len( aColor ), RmcN( hRmc, n + 4 ), ;
          RmcN( hRmc, n + 16 ), RmcN( hRmc, n + 18 ), RmcN( hRmc, n + 8 ) != 0, RmcN( hRmc, n + 12 ), ;
          RmcN( hRmc, n + 20 ), 0 )
    CASE nType == RMC_XYCHART
@@ -159,7 +164,7 @@ STATIC FUNCTION RmcSeries( hRmc, nCtrlId, nRegion, nSeries, n, cPath )
       nR := Int( n / 10000 ) * 10000
       nXAxis := iif( RmcN( hRmc, n + 27 ) == 2, RmcN( hRmc, nR + 100 ), RmcN( hRmc, nR + 76 ) )
       nYAxis := iif( RmcN( hRmc, n + 27 ) == 2, RmcN( hRmc, nR + 109 ), RmcN( hRmc, nR + 89 ) )
-      RMC_AddXYSeries( nCtrlId, nRegion, aData, Len( aData ), aY, Len( aY ), RmcN( hRmc, n + 19 ), ;
+      RmcDo( "RMC_AddXYSeries", nCtrlId, nRegion, aData, Len( aData ), aY, Len( aY ), RmcN( hRmc, n + 19 ), ;
          RmcN( hRmc, n + 4 ), RmcN( hRmc, n + 6 ), RmcN( hRmc, n + 14 ), nXAxis, nYAxis, RmcN( hRmc, n + 12 ) )
    ENDCASE
 
@@ -303,3 +308,75 @@ STATIC FUNCTION RmcN( hRmc, nCode )
 STATIC FUNCTION RmcC( hRmc, nCode )
 
    RETURN iif( hb_HHasKey( hRmc, nCode ), hRmc[ nCode ], "" )
+
+/*
+RMC_File2Source( cRMCFile, [bText], [bData] ) --> cSource
+   Harbour source with the same RMC_*() calls that RMC_CreateChartFromFile() does,
+   using the variables hWnd, nId and lExportOnly. Data from *.csv goes into the source.
+   bText( cText ) --> cText    optional, to change the texts (captions, legends, labels)
+   bData( aData, cFunc ) --> aData   optional, to change the data of the series
+*/
+FUNCTION RMC_File2Source( cRMCFile, bText, bData )
+
+   LOCAL cSource
+
+   s_hSource := { "code" => "", "text" => bText, "data" => bData }
+   RMC_CreateChartFromFile( "hWnd", "nId", 0, 0, "lExportOnly", cRMCFile )
+   cSource := s_hSource[ "code" ]
+   s_hSource := Nil
+
+   RETURN cSource
+
+// draw (call the function) or, inside RMC_File2Source(), write the call as source
+STATIC FUNCTION RmcDo( cFunc, ... )
+
+   LOCAL aParams := hb_AParams(), xValue, cLine, nPos, lData
+
+   hb_ADel( aParams, 1, .T. )
+   IF s_hSource == Nil
+      RETURN hb_ExecFromArray( cFunc, aParams )
+   ENDIF
+   cLine := "   " + cFunc + "( "
+   FOR nPos = 1 TO Len( aParams )
+      xValue := aParams[ nPos ]
+      lData  := ( nPos == 3 .AND. ! cFunc $ "RMC_CreateChart,RMC_AddRegion,RMC_SetSeriesColor" ) .OR. ;
+         ( nPos == 5 .AND. cFunc == "RMC_AddXYSeries" )
+      DO CASE
+      CASE HB_ISSTRING( xValue ) .AND. xValue $ "hWnd,nId,lExportOnly"
+         cLine += xValue
+      CASE HB_ISSTRING( xValue )
+         IF s_hSource[ "text" ] != Nil .AND. ! cFunc == "RMC_CreateChart"
+            xValue := Eval( s_hSource[ "text" ], xValue )
+         ENDIF
+         cLine += hb_ValToExp( xValue )
+      CASE HB_ISARRAY( xValue )
+         IF lData .AND. s_hSource[ "data" ] != Nil
+            xValue := Eval( s_hSource[ "data" ], xValue, cFunc )
+            aParams[ nPos + 1 ] := Len( xValue )
+         ENDIF
+         cLine += RmcArraySource( xValue )
+      CASE HB_ISNUMERIC( xValue ) .AND. xValue == Int( xValue )
+         cLine += hb_ntos( xValue )
+      OTHERWISE
+         cLine += hb_ValToExp( xValue )
+      ENDCASE
+      cLine += iif( nPos == Len( aParams ), " )", ", " )
+   NEXT
+   s_hSource[ "code" ] += cLine + hb_Eol()
+
+   RETURN 0
+
+// array as source, 10 values by line
+STATIC FUNCTION RmcArraySource( aList )
+
+   LOCAL cText := "{ ", nPos
+
+   FOR nPos = 1 TO Len( aList )
+      cText += iif( HB_ISNUMERIC( aList[ nPos ] ) .AND. aList[ nPos ] != Int( aList[ nPos ] ), ;
+         hb_ntos( Round( aList[ nPos ], 4 ) ), hb_ValToExp( aList[ nPos ] ) )
+      IF nPos < Len( aList )
+         cText += iif( nPos % 10 == 0, ", ;" + hb_Eol() + "      ", ", " )
+      ENDIF
+   NEXT
+
+   RETURN cText + " }"
