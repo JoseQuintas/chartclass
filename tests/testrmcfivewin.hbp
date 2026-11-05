@@ -1,0 +1,8 @@
+-I../include
+../chartclass.hbc
+fivewin.hbc
+-w3
+-es2
+
+testrmcfivewin.prg
+rmcsamples.prg
