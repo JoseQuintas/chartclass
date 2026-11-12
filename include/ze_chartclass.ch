@@ -428,6 +428,7 @@ ze_chartclass.ch - constants for chartclass, same names and values of the RMC_* 
 #define RMC_ERROR_PRINT                  -13
 #define RMC_ERROR_NOGDIP                 -14
 #define RMC_ERROR_RMCFILE                -15
+#define RMC_ERROR_CUSTOMINDEX            -51
 #define RMC_ERROR_FILEFOUND              -16
 #define RMC_ERROR_READLINES              -17
 #define RMC_ERROR_XYAXIS                 -18

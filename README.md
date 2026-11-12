@@ -31,10 +31,13 @@ Phase 1, work in progress.
 | Line and area series: line, area, indexed, stacked, stacked 100%, spline, stair, 3D, cable, symbols | done |
 | Printer (EMF+, EMF, BMP), clipboard (EMF and bitmap) | done |
 | XY with X/Y axes, high-low (OHLC, candlestick), volume bars, pyramid flat and 3D | done |
-| Custom objects (`RMC_CO*`), tooltips, zoom | next |
+| Custom objects: text and line (`RMC_COText()`, `RMC_COLine()`) | done |
+| Other custom objects (box, circle, image...), tooltips, zoom | next |
 | `.rmc` files: `RMC_CreateChartFromFile()`, `RMC_GetChartSizeFromFile()`, `RMC_File2Source()` (to Harbour source) (data in the file or in a `.csv`) | basic |
 
 Functions not implemented yet exist and return 0, so programs link and run.
+
+See [MANUAL.md](MANUAL.md) for the use of each function.
 
 ## Build
 
@@ -87,7 +90,7 @@ methods are accepted too. The `RMC_*()` functions can also be called directly, w
   parents, only for a console GT (GTWVT/GTWVG), so the console repaint does not paint over the chart.
 - `RMC_CreateChartOnDC()` draws on a DC received, `RMC_Split*()` are simple Harbour functions.
 - Automatic scale (min = max = 0): from the data, zero is not forced, as RMChart, but the steps can be different.
-- `.rmc` files: custom objects are not drawn yet, `RMC_WriteRMCFile()` is not done.
+- `.rmc` files: only text and line custom objects are drawn, `RMC_WriteRMCFile()` is not done.
 - `RMC_Draw2Printer()` with hDC 0 shows the printer dialog and prints one page. With a hDC it only
   draws, StartDoc()/StartPage() are of the caller. Position and size in mm, size 0 = printable width.
 
