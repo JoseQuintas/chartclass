@@ -74,12 +74,16 @@ CHC_GDIP_FUNC( GpStatus, GdipDeleteBrush, ( GpBrush * ) )
 CHC_GDIP_FUNC( GpStatus, GdipCreatePen1, ( ARGB, REAL, int, GpPen ** ) )
 CHC_GDIP_FUNC( GpStatus, GdipSetPenDashStyle, ( GpPen *, int ) )
 CHC_GDIP_FUNC( GpStatus, GdipSetPenLineJoin, ( GpPen *, int ) )
+CHC_GDIP_FUNC( GpStatus, GdipSetPenStartCap, ( GpPen *, int ) )
+CHC_GDIP_FUNC( GpStatus, GdipSetPenEndCap, ( GpPen *, int ) )
 CHC_GDIP_FUNC( GpStatus, GdipDeletePen, ( GpPen * ) )
 CHC_GDIP_FUNC( GpStatus, GdipDrawLine, ( GpGraphics *, GpPen *, REAL, REAL, REAL, REAL ) )
 CHC_GDIP_FUNC( GpStatus, GdipDrawRectangle, ( GpGraphics *, GpPen *, REAL, REAL, REAL, REAL ) )
 CHC_GDIP_FUNC( GpStatus, GdipFillRectangle, ( GpGraphics *, GpBrush *, REAL, REAL, REAL, REAL ) )
 CHC_GDIP_FUNC( GpStatus, GdipFillPolygon, ( GpGraphics *, GpBrush *, const CHC_POINTF *, INT, int ) )
 CHC_GDIP_FUNC( GpStatus, GdipDrawPolygon, ( GpGraphics *, GpPen *, const CHC_POINTF *, INT ) )
+CHC_GDIP_FUNC( GpStatus, GdipDrawLines, ( GpGraphics *, GpPen *, const CHC_POINTF *, INT ) )
+CHC_GDIP_FUNC( GpStatus, GdipDrawCurve, ( GpGraphics *, GpPen *, const CHC_POINTF *, INT ) )
 CHC_GDIP_FUNC( GpStatus, GdipFillEllipse, ( GpGraphics *, GpBrush *, REAL, REAL, REAL, REAL ) )
 CHC_GDIP_FUNC( GpStatus, GdipDrawEllipse, ( GpGraphics *, GpPen *, REAL, REAL, REAL, REAL ) )
 CHC_GDIP_FUNC( GpStatus, GdipCreatePath, ( int, GpPath ** ) )
@@ -150,12 +154,16 @@ static const struct
    CHC_GDIP_ENTRY( GdipCreatePen1 ),
    CHC_GDIP_ENTRY( GdipSetPenDashStyle ),
    CHC_GDIP_ENTRY( GdipSetPenLineJoin ),
+   CHC_GDIP_ENTRY( GdipSetPenStartCap ),
+   CHC_GDIP_ENTRY( GdipSetPenEndCap ),
    CHC_GDIP_ENTRY( GdipDeletePen ),
    CHC_GDIP_ENTRY( GdipDrawLine ),
    CHC_GDIP_ENTRY( GdipDrawRectangle ),
    CHC_GDIP_ENTRY( GdipFillRectangle ),
    CHC_GDIP_ENTRY( GdipFillPolygon ),
    CHC_GDIP_ENTRY( GdipDrawPolygon ),
+   CHC_GDIP_ENTRY( GdipDrawLines ),
+   CHC_GDIP_ENTRY( GdipDrawCurve ),
    CHC_GDIP_ENTRY( GdipFillEllipse ),
    CHC_GDIP_ENTRY( GdipDrawEllipse ),
    CHC_GDIP_ENTRY( GdipCreatePath ),
@@ -268,6 +276,16 @@ static const struct
 #define RMC_LINE_FLAT_DASH        18
 #define RMC_LINE_FLAT_DOT         19
 #define RMC_LINE_FLAT             21
+#define RMC_BOX_NONE              0
+#define RMC_BOX_RHOMBUS           3
+#define RMC_ANCHOR_ROUND          1
+#define RMC_ANCHOR_BULLET         2
+#define RMC_ANCHOR_ARROW_CLOSED   3
+#define RMC_ANCHOR_ARROW_OPEN     4
+#define GP_LINECAPFLAT            0
+#define GP_LINECAPROUND           2
+#define GP_LINECAPROUNDANCHOR     0x12
+#define GP_LINECAPARROWANCHOR     0x14
 #define RMC_LINE_CABLE            22
 #define RMC_LINE_3D               23
 #define RMC_LINE_3D_GRADIENT      24
@@ -410,6 +428,7 @@ static const struct
 #define RMC_ERROR_NOGDIP          -14
 #define RMC_ERROR_EMF             -20
 #define RMC_ERROR_CLIPBOARD       -24
+#define RMC_ERROR_CUSTOMINDEX     -51
 #define RMC_ERROR_FILECREATE      -26
 #define RMC_ERROR_AXISALIGNMENT   -29
 #define RMC_ERROR_XYAXIS          -18
@@ -571,6 +590,33 @@ typedef struct
    int         nSeries;
 } CHC_REGION;
 
+/* custom objects, RMC_CO*() */
+#define CHC_MAXCOBJ     200
+#define CHC_CO_TEXT     1
+#define CHC_CO_LINE     4
+
+typedef struct
+{
+   int         iType;
+   char *      szText;
+   int         x, y, w, h;
+   int         iStyle;
+   ARGB        bgColor;
+   ARGB        lineColor;
+   int         iTransparency;
+   ARGB        color;
+   int         iFontSize;
+   HB_BOOL     lBold;
+   int         iAlign;
+   REAL *      pX;
+   REAL *      pY;
+   int         nPoints;
+   HB_BOOL     lSpline;
+   int         iWidth;
+   int         iStartCap;
+   int         iEndCap;
+} CHC_COBJ;
+
 typedef struct
 {
    int         iId;
@@ -591,6 +637,7 @@ typedef struct
    HBITMAP     hBitmap;
    HBITMAP     hOldBitmap;
    int         bmpW, bmpH;
+   CHC_COBJ *  pCObj;           /* RMC_CO*(), CHC_MAXCOBJ items */
 } CHC_CHART;
 
 typedef struct
@@ -1367,6 +1414,141 @@ static void chc_RegionFree( CHC_REGION * pRegion )
    memset( pRegion, 0, sizeof( CHC_REGION ) );
 }
 
+/* ---------------------------------------------------------------- custom objects */
+
+static void chc_CObjFree( CHC_COBJ * pObj )
+{
+   chc_StrFree( &pObj->szText );
+   if( pObj->pX )
+      hb_xfree( pObj->pX );
+   if( pObj->pY )
+      hb_xfree( pObj->pY );
+   memset( pObj, 0, sizeof( CHC_COBJ ) );
+}
+
+static void chc_CObjFreeAll( CHC_CHART * pChart )
+{
+   int n;
+
+   if( pChart->pCObj )
+   {
+      for( n = 0; n < CHC_MAXCOBJ; n++ )
+         chc_CObjFree( &pChart->pCObj[ n ] );
+      hb_xfree( pChart->pCObj );
+      pChart->pCObj = NULL;
+   }
+}
+
+/* index 1 to 200, an existing object with the same index is replaced */
+static CHC_COBJ * chc_CObjNew( CHC_CHART * pChart, int iIndex, int iType )
+{
+   CHC_COBJ * pObj;
+
+   if( iIndex < 1 || iIndex > CHC_MAXCOBJ )
+      return NULL;
+   if( pChart->pCObj == NULL )
+   {
+      pChart->pCObj = ( CHC_COBJ * ) hb_xgrab( sizeof( CHC_COBJ ) * CHC_MAXCOBJ );
+      memset( pChart->pCObj, 0, sizeof( CHC_COBJ ) * CHC_MAXCOBJ );
+   }
+   pObj = &pChart->pCObj[ iIndex - 1 ];
+   chc_CObjFree( pObj );
+   pObj->iType = iType;
+   return pObj;
+}
+
+static void chc_CObjDrawText( CHC_DC * dc, CHC_COBJ * pObj )
+{
+   REAL x = ( REAL ) pObj->x, y = ( REAL ) pObj->y, w = ( REAL ) pObj->w, h = ( REAL ) pObj->h, tw, th;
+   ARGB bgColor = pObj->bgColor, lineColor = pObj->lineColor;
+
+   if( w <= 0 || h <= 0 )
+   {
+      chc_TextSize( dc, pObj->szText, pObj->iFontSize, pObj->lBold, &tw, &th );
+      if( w <= 0 )
+         w = tw + 4;
+      if( h <= 0 )
+         h = th + 2;
+   }
+   if( pObj->iStyle != RMC_BOX_NONE )
+   {
+      if( bgColor == RMC_COLOR_DEFAULT && pObj->iStyle > RMC_BOX_RHOMBUS )
+         bgColor = 0xFFADD8E6; /* LightBlue */
+      if( bgColor != RMC_COLOR_DEFAULT )
+      {
+         bgColor = chc_Color( bgColor, 0xFFADD8E6 );
+         if( pObj->iTransparency > 0 )
+            bgColor = chc_Alpha( bgColor, pObj->iTransparency );
+         chc_FillRect( dc, bgColor, x, y, w, h );
+      }
+      if( lineColor == RMC_COLOR_DEFAULT )
+         lineColor = bgColor != RMC_COLOR_DEFAULT ? bgColor : 0xFF0000FF;
+      chc_DrawRect( dc, chc_Color( lineColor, 0xFF0000FF ), x, y, w, h );
+   }
+   chc_TextRect( dc, pObj->szText, pObj->iFontSize, pObj->lBold, chc_Color( pObj->color, 0xFF000000 ), x, y, w, h, pObj->iAlign, GP_ALIGNCENTER );
+}
+
+static int chc_CObjLineCap( int iCap )
+{
+   switch( iCap )
+   {
+      case RMC_ANCHOR_ROUND:        return GP_LINECAPROUND;
+      case RMC_ANCHOR_BULLET:       return GP_LINECAPROUNDANCHOR;
+      case RMC_ANCHOR_ARROW_CLOSED: return GP_LINECAPARROWANCHOR;
+      case RMC_ANCHOR_ARROW_OPEN:   return GP_LINECAPARROWANCHOR;
+   }
+   return GP_LINECAPFLAT;
+}
+
+static void chc_CObjDrawLine( CHC_DC * dc, CHC_COBJ * pObj )
+{
+   GpPen * pen;
+   CHC_POINTF * pts;
+   int n, iDash = RMC_LINESTYLESOLID;
+
+   if( pObj->nPoints < 2 )
+      return;
+   switch( pObj->iStyle )
+   {
+      case RMC_LINE_FLAT_DASH:       iDash = RMC_LINESTYLEDASH;    break;
+      case RMC_LINE_FLAT_DOT:        iDash = RMC_LINESTYLEDOT;     break;
+      case RMC_LINE_FLAT_DASHDOT:    iDash = RMC_LINESTYLEDASHDOT; break;
+      case RMC_LINE_FLAT_DASHDOTDOT: iDash = RMC_LINESTYLEDASHDOT; break;
+   }
+   pen = chc_Pen( chc_Color( pObj->color, 0xFF0000FF ), ( REAL ) ( pObj->iWidth > 0 ? HB_MIN( pObj->iWidth, 5 ) : 2 ), iDash );
+   pGdipSetPenStartCap( pen, chc_CObjLineCap( pObj->iStartCap ) );
+   pGdipSetPenEndCap( pen, chc_CObjLineCap( pObj->iEndCap ) );
+   pts = ( CHC_POINTF * ) hb_xgrab( sizeof( CHC_POINTF ) * pObj->nPoints );
+   for( n = 0; n < pObj->nPoints; n++ )
+   {
+      pts[ n ].X = pObj->pX[ n ];
+      pts[ n ].Y = pObj->pY[ n ];
+   }
+   if( pObj->lSpline && pObj->nPoints > 2 )
+      pGdipDrawCurve( dc->g, pen, pts, pObj->nPoints );
+   else
+      pGdipDrawLines( dc->g, pen, pts, pObj->nPoints );
+   hb_xfree( pts );
+   pGdipDeletePen( pen );
+}
+
+static void chc_CObjDraw( CHC_DC * dc )
+{
+   CHC_CHART * pChart = dc->pChart;
+   int n;
+
+   if( pChart->pCObj == NULL )
+      return;
+   for( n = 0; n < CHC_MAXCOBJ; n++ )
+   {
+      switch( pChart->pCObj[ n ].iType )
+      {
+         case CHC_CO_TEXT: chc_CObjDrawText( dc, &pChart->pCObj[ n ] ); break;
+         case CHC_CO_LINE: chc_CObjDrawLine( dc, &pChart->pCObj[ n ] ); break;
+      }
+   }
+}
+
 static void chc_ChartReset( CHC_CHART * pChart )
 {
    int n;
@@ -1374,6 +1556,7 @@ static void chc_ChartReset( CHC_CHART * pChart )
    for( n = 0; n < pChart->nRegion; n++ )
       chc_RegionFree( &pChart->region[ n ] );
    pChart->nRegion = 0;
+   chc_CObjFreeAll( pChart );
 }
 
 static void chc_ChartDelete( CHC_CHART * pChart )
@@ -4553,6 +4736,7 @@ static void chc_Render( CHC_CHART * pChart, GpGraphics * g, int iWidth, int iHei
    chc_ChartBackground( &dc );
    for( n = 0; n < pChart->nRegion; n++ )
       chc_RegionDraw( &dc, &pChart->region[ n ] );
+   chc_CObjDraw( &dc );
    chc_WaterMark( &dc );
 
    pGdipDeleteFontFamily( dc.family );
@@ -5517,6 +5701,99 @@ HB_FUNC( RMC_GETVERSION )
 
 /* ---------------------------------------------------------------- not implemented yet */
 
+/* RMC_COText( nCtrlId, nIndex, cText, nLeft, nTop, nWidth, nHeight, nStyle, nBgColor, nLineColor, nTransparency, nLineAlignment, nTextColor, cTextProperties )
+   cTextProperties: font size (default 8), B = bold, L C R = alignment (default C) - horizontal text only */
+HB_FUNC( RMC_COTEXT )
+{
+   CHC_CHART * pChart = chc_ChartGet( hb_parni( 1 ) );
+   CHC_COBJ * pObj;
+   const char * szProp = hb_parcx( 14 );
+   int iSize = 0;
+
+   if( pChart == NULL )
+   {
+      hb_retni( RMC_ERROR_CTRLID );
+      return;
+   }
+   pObj = chc_CObjNew( pChart, hb_parni( 2 ), CHC_CO_TEXT );
+   if( pObj == NULL )
+   {
+      hb_retni( RMC_ERROR_CUSTOMINDEX );
+      return;
+   }
+   chc_StrSet( &pObj->szText, hb_parc( 3 ) );
+   pObj->x             = hb_parni( 4 );
+   pObj->y             = hb_parni( 5 );
+   pObj->w             = hb_parni( 6 );
+   pObj->h             = hb_parni( 7 );
+   pObj->iStyle        = hb_parni( 8 );
+   pObj->bgColor       = chc_parcolor( 9 );
+   pObj->lineColor     = chc_parcolor( 10 );
+   pObj->iTransparency = hb_parni( 11 );
+   pObj->color         = chc_parcolor( 13 );
+   pObj->iAlign        = GP_ALIGNCENTER;
+   for( ; *szProp; szProp++ )
+   {
+      if( *szProp >= '0' && *szProp <= '9' )
+         iSize = iSize * 10 + ( *szProp - '0' );
+      else if( *szProp == 'B' || *szProp == 'b' )
+         pObj->lBold = HB_TRUE;
+      else if( *szProp == 'L' || *szProp == 'l' )
+         pObj->iAlign = GP_ALIGNNEAR;
+      else if( *szProp == 'R' || *szProp == 'r' )
+         pObj->iAlign = GP_ALIGNFAR;
+      else if( *szProp == 'C' || *szProp == 'c' )
+         pObj->iAlign = GP_ALIGNCENTER;
+   }
+   pObj->iFontSize = iSize > 0 ? iSize : 8;
+   hb_retni( RMC_NO_ERROR );
+}
+
+/* RMC_COLine( nCtrlId, nIndex, aX, aY, nCount, nStyle, nColor, lSpline, nLineWidth, nStartCap, nEndCap ) */
+HB_FUNC( RMC_COLINE )
+{
+   CHC_CHART * pChart = chc_ChartGet( hb_parni( 1 ) );
+   CHC_COBJ * pObj;
+   double * pX, * pY;
+   int nX = hb_parni( 5 ), nY = hb_parni( 5 ), n;
+
+   if( pChart == NULL )
+   {
+      hb_retni( RMC_ERROR_CTRLID );
+      return;
+   }
+   pObj = chc_CObjNew( pChart, hb_parni( 2 ), CHC_CO_LINE );
+   if( pObj == NULL )
+   {
+      hb_retni( RMC_ERROR_CUSTOMINDEX );
+      return;
+   }
+   pX = chc_pardoubles( 3, &nX );
+   pY = chc_pardoubles( 4, &nY );
+   pObj->nPoints = HB_MIN( nX, nY );
+   if( pObj->nPoints > 0 )
+   {
+      pObj->pX = ( REAL * ) hb_xgrab( sizeof( REAL ) * pObj->nPoints );
+      pObj->pY = ( REAL * ) hb_xgrab( sizeof( REAL ) * pObj->nPoints );
+      for( n = 0; n < pObj->nPoints; n++ )
+      {
+         pObj->pX[ n ] = ( REAL ) pX[ n ];
+         pObj->pY[ n ] = ( REAL ) pY[ n ];
+      }
+   }
+   if( pX )
+      hb_xfree( pX );
+   if( pY )
+      hb_xfree( pY );
+   pObj->iStyle    = hb_parni( 6 );
+   pObj->color     = chc_parcolor( 7 );
+   pObj->lSpline   = HB_ISLOG( 8 ) ? hb_parl( 8 ) : hb_parni( 8 ) != 0;
+   pObj->iWidth    = hb_parni( 9 );
+   pObj->iStartCap = hb_parni( 10 );
+   pObj->iEndCap   = hb_parni( 11 );
+   hb_retni( RMC_NO_ERROR );
+}
+
 #define CHC_TODO( name )  HB_FUNC( name ) { hb_retni( RMC_NO_ERROR ); }
 
 CHC_TODO( RMC_ADDTOOLTIPS )
@@ -5527,10 +5804,8 @@ CHC_TODO( RMC_COCIRCLE )
 CHC_TODO( RMC_CODASH )
 CHC_TODO( RMC_CODELETE )
 CHC_TODO( RMC_COIMAGE )
-CHC_TODO( RMC_COLINE )
 CHC_TODO( RMC_COPOLYGON )
 CHC_TODO( RMC_COSYMBOL )
-CHC_TODO( RMC_COTEXT )
 CHC_TODO( RMC_COVISIBLE )
 CHC_TODO( RMC_GETDATA )
 CHC_TODO( RMC_GETDATACOUNT )

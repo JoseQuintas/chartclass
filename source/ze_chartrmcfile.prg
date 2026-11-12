@@ -23,7 +23,7 @@ STATIC s_hSource := Nil
 
 FUNCTION RMC_CreateChartFromFile( hParent, nCtrlId, nX, nY, lExportOnly, cRMCFile )
 
-   LOCAL hRmc, nRegion, nSeries, nResult, cPath := ""
+   LOCAL hRmc, nRegion, nSeries, nResult, cPath := "", hObj
 
    IF ! RmcLoad( cRMCFile, @hRmc, @cPath )
       RETURN RMC_ERROR_RMCFILE
@@ -48,6 +48,10 @@ FUNCTION RMC_CreateChartFromFile( hParent, nCtrlId, nX, nY, lExportOnly, cRMCFil
       FOR nSeries = 1 TO Min( RmcN( hRmc, nRegion * 10000 + 48 ), 9 )
          RmcSeries( hRmc, nCtrlId, nRegion, nSeries, nRegion * 10000 + nSeries * 1000, cPath )
       NEXT
+   NEXT
+   // custom objects (01xxx), one hash for each object
+   FOR EACH hObj IN hRmc[ "CO" ]
+      RmcObject( hObj, nCtrlId )
    NEXT
 
    RETURN nResult
@@ -253,9 +257,30 @@ STATIC FUNCTION RmcLine( nLine, nCount )
 
    RETURN iif( nLine < 0, nCount + nLine + 1, iif( nLine == 0, nCount, nLine ) )
 
+// custom objects: 1001 index, 1005 type (1 text, 4 line), text: 1010 left, 1011 top, 1012 width, 1013 height,
+// 1019 bold, 1026 text, 1030 text color; line: 1007 style, 1014 color, 1022 width, 1024 X points, 1025 Y points,
+// 1027 start cap, 1028 end cap
+STATIC FUNCTION RmcObject( hObj, nCtrlId )
+
+   LOCAL aX, aY
+
+   DO CASE
+   CASE RmcN( hObj, 1005 ) == 1
+      RmcDo( "RMC_COText", nCtrlId, RmcN( hObj, 1001 ), RmcC( hObj, 1026 ), RmcN( hObj, 1010 ), RmcN( hObj, 1011 ), ;
+         RmcN( hObj, 1012 ), RmcN( hObj, 1013 ), RMC_BOX_NONE, 0, 0, 0, 0, RmcN( hObj, 1030 ), ;
+         iif( RmcN( hObj, 1019 ) != 0, "B", "" ) + "C" )
+   CASE RmcN( hObj, 1005 ) == 4
+      aX := RmcArray( RmcC( hObj, 1024 ) )
+      aY := RmcArray( RmcC( hObj, 1025 ) )
+      RmcDo( "RMC_COLine", nCtrlId, RmcN( hObj, 1001 ), aX, aY, Min( Len( aX ), Len( aY ) ), RmcN( hObj, 1007 ), ;
+         RmcN( hObj, 1014 ), .F., RmcN( hObj, 1022 ), RmcN( hObj, 1027 ), RmcN( hObj, 1028 ) )
+   ENDCASE
+
+   RETURN Nil
+
 STATIC FUNCTION RmcLoad( cRMCFile, hRmc, cPath )
 
-   LOCAL cText, cField
+   LOCAL cText, cField, nCode
 
    IF ! HB_ISSTRING( cRMCFile ) .OR. Empty( cRMCFile )
       RETURN .F.
@@ -271,14 +296,24 @@ STATIC FUNCTION RmcLoad( cRMCFile, hRmc, cPath )
       cPath := hb_FNameDir( cRMCFile )
    ENDIF
    cText := StrTran( StrTran( cText, Chr( 13 ), "" ), Chr( 10 ), "" )
-   hRmc  := { => }
+   hRmc  := { "CO" => {} }
    FOR EACH cField IN hb_ATokens( cText, "|" )
       IF Len( cField ) >= 5 .AND. IsDigit( cField )
-         hRmc[ Val( Left( cField, 5 ) ) ] := Substr( cField, 6 )
+         nCode := Val( Left( cField, 5 ) )
+         IF nCode >= 1000 .AND. nCode <= 1999 // custom objects, the same codes for each one
+            IF nCode == 1001
+               AAdd( hRmc[ "CO" ], { => } )
+            ENDIF
+            IF ! Empty( hRmc[ "CO" ] )
+               ATail( hRmc[ "CO" ] )[ nCode ] := Substr( cField, 6 )
+            ENDIF
+         ELSE
+            hRmc[ nCode ] := Substr( cField, 6 )
+         ENDIF
       ENDIF
    NEXT
 
-   RETURN ! Empty( hRmc )
+   RETURN Len( hRmc ) > 1
 
 // file of the chart (image, data) relative to the *.rmc folder
 STATIC FUNCTION RmcFile( cFile, cPath )
@@ -339,7 +374,7 @@ STATIC FUNCTION RmcDo( cFunc, ... )
    cLine := "   " + cFunc + "( "
    FOR nPos = 1 TO Len( aParams )
       xValue := aParams[ nPos ]
-      lData  := ( nPos == 3 .AND. ! cFunc $ "RMC_CreateChart,RMC_AddRegion,RMC_SetSeriesColor" ) .OR. ;
+      lData  := ( nPos == 3 .AND. ! cFunc $ "RMC_CreateChart,RMC_AddRegion,RMC_SetSeriesColor,RMC_COLine" ) .OR. ;
          ( nPos == 5 .AND. cFunc == "RMC_AddXYSeries" )
       DO CASE
       CASE HB_ISSTRING( xValue ) .AND. xValue $ "hWnd,nId,lExportOnly"
