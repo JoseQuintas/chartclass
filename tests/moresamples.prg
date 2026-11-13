@@ -10,7 +10,7 @@ Graphic16 chart from RMC file (created on Graphic15)
 
 #include "ze_chartclass.ch"
 
-FUNCTION Graphic11( hWnd, nWidth, nHeight )
+FUNCTION Graphic11( hWnd, nWidth, nHeight, cFile )
 
    LOCAL nChartId, oChart := ChartClass():New()
    LOCAL cLabels := "Jan*Feb*Mar*Apr*May*Jun*Jul*Aug*Sep*Oct*Nov*Dec"
@@ -30,11 +30,14 @@ FUNCTION Graphic11( hWnd, nWidth, nHeight )
    oChart:AddLineSeries( nChartId, 1, aData1, 12, 0, 0, RMC_AREA, RMC_AREA_FLAT_GRADIENT_V, RMC_LSTYLE_SPLINE, .T., RMC_COLOR_CORN_FLOWER_BLUE, RMC_SYMBOL_NONE, 1, RMC_VLABEL_NONE, RMC_HATCHBRUSH_OFF )
    oChart:AddLineSeries( nChartId, 1, aData2, 12, 0, 0, RMC_LINE, RMC_LINE_CABLE, RMC_LSTYLE_LINE, .F., RMC_COLOR_CRIMSON, RMC_SYMBOL_BULLET, 1, RMC_VLABEL_NONE, RMC_HATCHBRUSH_OFF )
    oChart:Draw( nChartId )
+   IF HB_ISSTRING( cFile )
+      oChart:Draw2File( nChartId, cFile, 0, 0, 0 )
+   ENDIF
    // no Reset() here, tooltips need the chart data
 
    RETURN NIL
 
-FUNCTION Graphic12( hWnd, nWidth, nHeight )
+FUNCTION Graphic12( hWnd, nWidth, nHeight, cFile )
 
    LOCAL nChartId, oChart := ChartClass():New()
    LOCAL aX1 := { 10, 20, 30, 40, 50, 60, 70, 80, 90 }
@@ -54,11 +57,14 @@ FUNCTION Graphic12( hWnd, nWidth, nHeight )
    oChart:AddXYSeries( nChartId, 1, aX1, Len( aX1 ), aY1, Len( aY1 ), RMC_COLOR_WHITE_SMOKE, RMC_XY_LINE_DASH, RMC_LSTYLE_LINE, RMC_SYMBOL_STAR, RMC_XAXISBOTTOM, RMC_YAXISLEFT, RMC_VLABEL_NONE )
    oChart:AddXYSeries( nChartId, 1, aX2, Len( aX2 ), aY2, Len( aY2 ), RMC_COLOR_GOLD, RMC_XY_SYMBOL, RMC_LSTYLE_LINE, RMC_SYMBOL_DIAMOND, RMC_XAXISBOTTOM, RMC_YAXISLEFT, RMC_VLABEL_NONE )
    oChart:Draw( nChartId )
+   IF HB_ISSTRING( cFile )
+      oChart:Draw2File( nChartId, cFile, 0, 0, 0 )
+   ENDIF
    oChart:Reset( nChartId )
 
    RETURN NIL
 
-FUNCTION Graphic13( hWnd, nWidth, nHeight )
+FUNCTION Graphic13( hWnd, nWidth, nHeight, cFile )
 
    LOCAL nChartId, oChart := ChartClass():New()
    LOCAL aOHLC := {}, aVolume := {}, aPPC := {}, cLabels := "", nCont, nOpen, nClose, nPrice := 50
@@ -96,11 +102,14 @@ FUNCTION Graphic13( hWnd, nWidth, nHeight )
    // AddVolumeBarSeries() did not align with columns on tests, using bars
    oChart:AddBarSeries( nChartId, 2, aVolume, Len( aVolume ), RMC_BARSINGLE, RMC_COLUMN_FLAT, .F., RMC_COLOR_STEEL_BLUE, .F., 1, RMC_VLABEL_NONE, 1, RMC_HATCHBRUSH_OFF )
    oChart:Draw( nChartId )
+   IF HB_ISSTRING( cFile )
+      oChart:Draw2File( nChartId, cFile, 0, 0, 0 )
+   ENDIF
    oChart:Reset( nChartId )
 
    RETURN NIL
 
-FUNCTION Graphic14( hWnd, nWidth, nHeight )
+FUNCTION Graphic14( hWnd, nWidth, nHeight, cFile )
 
    LOCAL nChartId, oChart := ChartClass():New()
    LOCAL aData := { 42, 38, 51, 47, 55, 60, 52, 66, 63, 71, 68, 77 }
@@ -119,11 +128,14 @@ FUNCTION Graphic14( hWnd, nWidth, nHeight )
    oChart:AddBarSeries( nChartId, 1, aData, 12, RMC_BARSINGLE, RMC_BAR_FLAT_GRADIENT2, .F., RMC_COLOR_CORN_FLOWER_BLUE, .F., 1, RMC_VLABEL_NONE, 1, RMC_HATCHBRUSH_OFF )
    oChart:AddLineSeries( nChartId, 1, aTrend, 12, 0, 0, RMC_LINE, RMC_LINE_FLAT_DASH, RMC_LSTYLE_LINE, .F., RMC_COLOR_RED, RMC_SYMBOL_NONE, 1, RMC_VLABEL_NONE, RMC_HATCHBRUSH_OFF )
    oChart:Draw( nChartId )
+   IF HB_ISSTRING( cFile )
+      oChart:Draw2File( nChartId, cFile, 0, 0, 0 )
+   ENDIF
    oChart:Reset( nChartId )
 
    RETURN NIL
 
-FUNCTION Graphic15( hWnd, nWidth, nHeight )
+FUNCTION Graphic15( hWnd, nWidth, nHeight, cFile )
 
    LOCAL nChartId, oChart := ChartClass():New()
    LOCAL aData := { 25, 40, 35, 60, 45 }
@@ -138,6 +150,9 @@ FUNCTION Graphic15( hWnd, nWidth, nHeight )
    oChart:AddLabelAxis( nChartId, 1, "North*South*East*West*Center", 1, 5, RMC_LABELAXISBOTTOM, 8, RMC_COLOR_BLACK, RMC_TEXTCENTER, RMC_COLOR_BLACK, RMC_LINESTYLESOLID, "" )
    oChart:AddBarSeries( nChartId, 1, aData, 5, RMC_BARSINGLE, RMC_BAR_3D, .F., RMC_COLOR_DARK_GREEN, .F., 1, RMC_VLABEL_DEFAULT, 1, RMC_HATCHBRUSH_OFF )
    oChart:Draw( nChartId )
+   IF HB_ISSTRING( cFile )
+      oChart:Draw2File( nChartId, cFile, 0, 0, 0 )
+   ENDIF
    // png/jpg/emf by extension, to use on PDF, email, etc.
    oChart:Draw2File( nChartId, "chartclass_test.png", 0, 0, 0 )
    // RMC file can be loaded with CreateChartFromFile(), see Graphic16
@@ -146,7 +161,7 @@ FUNCTION Graphic15( hWnd, nWidth, nHeight )
 
    RETURN NIL
 
-FUNCTION Graphic16( hWnd, nWidth, nHeight )
+FUNCTION Graphic16( hWnd, nWidth, nHeight, cFile )
 
    LOCAL nChartId, oChart := ChartClass():New()
 
@@ -160,6 +175,9 @@ FUNCTION Graphic16( hWnd, nWidth, nHeight )
    oChart:CreateChartFromFile( hWnd, nChartId, 0, 0, .F., "chartclass_test.rmc" )
    oChart:SetCaptionText( nChartId, 1, "Loaded from chartclass_test.rmc" )
    oChart:Draw( nChartId )
+   IF HB_ISSTRING( cFile )
+      oChart:Draw2File( nChartId, cFile, 0, 0, 0 )
+   ENDIF
    oChart:Reset( nChartId )
 
    RETURN NIL

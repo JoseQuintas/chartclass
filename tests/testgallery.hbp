@@ -1,0 +1,10 @@
+-I../include
+../chartclass.hbc
+hbct.hbc
+-w3
+-es2
+
+testgallery.prg
+samples.prg
+moresamples.prg
+rmcsamples.prg

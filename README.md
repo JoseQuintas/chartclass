@@ -102,6 +102,7 @@ methods are accepted too. The `RMC_*()` functions can also be called directly, w
 - `tests/rmcsamples.prg` - 23 charts of the same kind of the RMChart `.rmc` samples, with fictitious texts and data,
   created by `tests/rmc2prg.prg` (`RMC_File2Source()`). `tests/testrmcfivewin.prg` shows them in tabs,
   `tests/testrmcsamples.prg` saves them to PNG.
+- `tests/testgallery.prg` - all samples above saved to `images/`, used on the gallery below.
 - `tests/testfivewin.prg` - FiveWin dialog with FOLDEREX, one chart on each of 16 tabs.
 - `tests/testhwgui.prg` - hwgui dialog with TAB, one chart on a PANEL of each of 16 pages.
 - `tests/testhmg3.prg`, `tests/testhmge.prg`, `tests/testoohg.prg` - HMG 3, HMG Extended and OOHG window
@@ -112,6 +113,7 @@ methods are accepted too. The `RMC_*()` functions can also be called directly, w
 ```
 cd tests
 hbmk2 testpng.hbp
+hbmk2 testgallery.hbp
 hbmk2 testwvt.hbp
 hbmk2 testfivewin.hbp
 hbmk2 testhwgui.hbp
@@ -119,6 +121,78 @@ hbmk2 testhmg3.hbp
 hbmk2 testhmge.hbp
 hbmk2 testoohg.hbp
 ```
+
+## Gallery
+
+Created by `tests/testgallery.prg`, click to see the full size.
+
+`tests/samples.prg` and `tests/moresamples.prg` (sample 16 is not here, it loads the `.rmc` file of sample 15, and `RMC_WriteRMCFile()` is not done):
+
+<table>
+<tr>
+<td><a href="images/sample_01.png"><img src="images/sample_01.png" width="200" alt="sample_01"></a></td>
+<td><a href="images/sample_02.png"><img src="images/sample_02.png" width="200" alt="sample_02"></a></td>
+<td><a href="images/sample_03.png"><img src="images/sample_03.png" width="200" alt="sample_03"></a></td>
+<td><a href="images/sample_04.png"><img src="images/sample_04.png" width="200" alt="sample_04"></a></td>
+</tr>
+<tr>
+<td><a href="images/sample_05.png"><img src="images/sample_05.png" width="200" alt="sample_05"></a></td>
+<td><a href="images/sample_06.png"><img src="images/sample_06.png" width="200" alt="sample_06"></a></td>
+<td><a href="images/sample_07.png"><img src="images/sample_07.png" width="200" alt="sample_07"></a></td>
+<td><a href="images/sample_08.png"><img src="images/sample_08.png" width="200" alt="sample_08"></a></td>
+</tr>
+<tr>
+<td><a href="images/sample_09.png"><img src="images/sample_09.png" width="200" alt="sample_09"></a></td>
+<td><a href="images/sample_10.png"><img src="images/sample_10.png" width="200" alt="sample_10"></a></td>
+<td><a href="images/sample_11.png"><img src="images/sample_11.png" width="200" alt="sample_11"></a></td>
+<td><a href="images/sample_12.png"><img src="images/sample_12.png" width="200" alt="sample_12"></a></td>
+</tr>
+<tr>
+<td><a href="images/sample_13.png"><img src="images/sample_13.png" width="200" alt="sample_13"></a></td>
+<td><a href="images/sample_14.png"><img src="images/sample_14.png" width="200" alt="sample_14"></a></td>
+<td><a href="images/sample_15.png"><img src="images/sample_15.png" width="200" alt="sample_15"></a></td>
+</tr>
+</table>
+
+`tests/rmcsamples.prg`:
+
+<table>
+<tr>
+<td><a href="images/rmcsample_01.png"><img src="images/rmcsample_01.png" width="200" alt="rmcsample_01"></a></td>
+<td><a href="images/rmcsample_02.png"><img src="images/rmcsample_02.png" width="200" alt="rmcsample_02"></a></td>
+<td><a href="images/rmcsample_03.png"><img src="images/rmcsample_03.png" width="200" alt="rmcsample_03"></a></td>
+<td><a href="images/rmcsample_04.png"><img src="images/rmcsample_04.png" width="200" alt="rmcsample_04"></a></td>
+</tr>
+<tr>
+<td><a href="images/rmcsample_05.png"><img src="images/rmcsample_05.png" width="200" alt="rmcsample_05"></a></td>
+<td><a href="images/rmcsample_06.png"><img src="images/rmcsample_06.png" width="200" alt="rmcsample_06"></a></td>
+<td><a href="images/rmcsample_07.png"><img src="images/rmcsample_07.png" width="200" alt="rmcsample_07"></a></td>
+<td><a href="images/rmcsample_08.png"><img src="images/rmcsample_08.png" width="200" alt="rmcsample_08"></a></td>
+</tr>
+<tr>
+<td><a href="images/rmcsample_09.png"><img src="images/rmcsample_09.png" width="200" alt="rmcsample_09"></a></td>
+<td><a href="images/rmcsample_10.png"><img src="images/rmcsample_10.png" width="200" alt="rmcsample_10"></a></td>
+<td><a href="images/rmcsample_11.png"><img src="images/rmcsample_11.png" width="200" alt="rmcsample_11"></a></td>
+<td><a href="images/rmcsample_12.png"><img src="images/rmcsample_12.png" width="200" alt="rmcsample_12"></a></td>
+</tr>
+<tr>
+<td><a href="images/rmcsample_13.png"><img src="images/rmcsample_13.png" width="200" alt="rmcsample_13"></a></td>
+<td><a href="images/rmcsample_14.png"><img src="images/rmcsample_14.png" width="200" alt="rmcsample_14"></a></td>
+<td><a href="images/rmcsample_15.png"><img src="images/rmcsample_15.png" width="200" alt="rmcsample_15"></a></td>
+<td><a href="images/rmcsample_16.png"><img src="images/rmcsample_16.png" width="200" alt="rmcsample_16"></a></td>
+</tr>
+<tr>
+<td><a href="images/rmcsample_17.png"><img src="images/rmcsample_17.png" width="200" alt="rmcsample_17"></a></td>
+<td><a href="images/rmcsample_18.png"><img src="images/rmcsample_18.png" width="200" alt="rmcsample_18"></a></td>
+<td><a href="images/rmcsample_19.png"><img src="images/rmcsample_19.png" width="200" alt="rmcsample_19"></a></td>
+<td><a href="images/rmcsample_20.png"><img src="images/rmcsample_20.png" width="200" alt="rmcsample_20"></a></td>
+</tr>
+<tr>
+<td><a href="images/rmcsample_21.png"><img src="images/rmcsample_21.png" width="200" alt="rmcsample_21"></a></td>
+<td><a href="images/rmcsample_22.png"><img src="images/rmcsample_22.png" width="200" alt="rmcsample_22"></a></td>
+<td><a href="images/rmcsample_23.png"><img src="images/rmcsample_23.png" width="200" alt="rmcsample_23"></a></td>
+</tr>
+</table>
 
 ---
 

@@ -7,7 +7,7 @@ SAMPLES - rmchart samples 1 to 10, used by all tab tests
 #define MAX_SIZE_ONE 800
 #define MAX_SIZE_TWO 600
 
-FUNCTION Graphic1( hWnd )
+FUNCTION Graphic1( hWnd, cFile )
 
    LOCAL cLegenda, cLabels, cTitulo, aDados, cImagem, cUnidade, cTextoVert, nMax, oElement, nCont
    LOCAL nChartId, oChart := ChartClass():New()
@@ -45,12 +45,15 @@ FUNCTION Graphic1( hWnd )
    NEXT
 
    oChart:Draw( nChartId )
+   IF HB_ISSTRING( cFile )
+      oChart:Draw2File( nChartId, cFile, 0, 0, 0 )
+   ENDIF
    oChart:Reset( nChartId )
    // oChart:Draw2Printer( nChartId, 0, 0, 0, 0, 0, RMC_BMP )
 
    RETURN NIL
 
-FUNCTION Graphic2( hWnd )
+FUNCTION Graphic2( hWnd, cFile )
 
    LOCAL sTemp1, aData1, sTemp2, sTemp3, aData2, aData3, aData4, aData5, aData6, aData7, aData8
    LOCAL nChartID, oChart := ChartClass():New()
@@ -101,11 +104,14 @@ FUNCTION Graphic2( hWnd )
    oChart:AddLineSeries( nChartId, 4, aData8, 10, 0, 0, RMC_LINE, RMC_LINE_CABLE, RMC_LSTYLE_LINE, .F., RMC_COLOR_GREEN, RMC_SYMBOL_NONE, 2, RMC_VLABEL_DEFAULT, RMC_HATCHBRUSH_OFF )
    oChart:SetWatermark( RMC_USERWM, RMC_USERWMCOLOR, RMC_USERWMLUCENT, RMC_USERWMALIGN, RMC_USERFONTSIZE )
    oChart:Draw( nChartId)
+   IF HB_ISSTRING( cFile )
+      oChart:Draw2File( nChartId, cFile, 0, 0, 0 )
+   ENDIF
    oChart:Reset( nChartId )
 
    RETURN NIL
 
-FUNCTION Graphic3( hWnd )
+FUNCTION Graphic3( hWnd, cFile )
 
    LOCAL sTemp := "Apples*Bananas*Pears*Cherries"
    LOCAL aData := { 30.25, 26.75, 15.89, 46.23 }
@@ -119,11 +125,14 @@ FUNCTION Graphic3( hWnd )
    oChart:AddGridlessSeries( nChartId, 1, aData, 4, 0, 0, RMC_PYRAMIDE3, RMC_FULL, 0, .F., RMC_VLABEL_DEFAULT, RMC_HATCHBRUSH_OFF, 0 )
    oChart:SetWatermark( RMC_USERWM, RMC_USERWMCOLOR, RMC_USERWMLUCENT, RMC_USERWMALIGN, RMC_USERFONTSIZE )
    oChart:Draw( nChartId )
+   IF HB_ISSTRING( cFile )
+      oChart:Draw2File( nChartId, cFile, 0, 0, 0 )
+   ENDIF
    oChart:Reset(nChartId)
 
    RETURN NIL
 
-FUNCTION Graphic4( hWnd )
+FUNCTION Graphic4( hWnd, cFile )
 
    LOCAL nChartId, oChart := ChartClass():New()
 
@@ -137,11 +146,14 @@ FUNCTION Graphic4( hWnd )
    oChart:AddBarSeries( nChartId, 1, { 50, 70, 40, 60, 30 }, 5, RMC_BARSINGLE, RMC_BAR_FLAT_GRADIENT2, .T., RMC_COLOR_TRANSPARENT, .F., 1, RMC_VLABEL_NONE, 1, RMC_HATCHBRUSH_OFF )
    oChart:SetWatermark( RMC_USERWM, RMC_USERWMCOLOR, RMC_USERWMLUCENT, RMC_USERWMALIGN, RMC_USERFONTSIZE )
    oChart:Draw( nChartId )
+   IF HB_ISSTRING( cFile )
+      oChart:Draw2File( nChartId, cFile, 0, 0, 0 )
+   ENDIF
    oChart:Reset( nChartId )
 
    RETURN NIL
 
-FUNCTION Graphic5( hWnd )
+FUNCTION Graphic5( hWnd, cFile )
 
    LOCAL aColors := { RMC_COLOR_LIGHT_GREEN, RMC_COLOR_YELLOW, RMC_COLOR_GOLDENROD, RMC_COLOR_CRIMSON }
    LOCAL aData   := { 40, 30, 60, 20 }
@@ -155,11 +167,14 @@ FUNCTION Graphic5( hWnd )
    oChart:AddGridlessSeries( nChartId, 1, aData, 4, aColors, 4, RMC_DONUT_GRADIENT, RMC_FULL, 0, .F., RMC_VLABEL_TWIN, RMC_HATCHBRUSH_OFF, 0 )
    oChart:SetWatermark( RMC_USERWM, RMC_USERWMCOLOR, RMC_USERWMLUCENT, RMC_USERWMALIGN, RMC_USERFONTSIZE )
    oChart:Draw( nChartId )
+   IF HB_ISSTRING( cFile )
+      oChart:Draw2File( nChartId, cFile, 0, 0, 0 )
+   ENDIF
    oChart:Reset( nChartId )
 
    RETURN NIL
 
-FUNCTION Graphic6( hWnd )
+FUNCTION Graphic6( hWnd, cFile )
 
    LOCAL aData, sTemp
    LOCAL nChartId, oChart := ChartClass():New()
@@ -185,11 +200,14 @@ FUNCTION Graphic6( hWnd )
    oChart:AddBarSeries( nChartId, 1, aData, 6, RMC_BARSTACKED, RMC_COLUMN_FLAT, .F., RMC_COLOR_DARK_GOLDENROD, .F., 1, RMC_VLABEL_NONE, 1, RMC_HATCHBRUSH_OFF )
    oChart:SetWatermark( RMC_USERWM, RMC_USERWMCOLOR, RMC_USERWMLUCENT, RMC_USERWMALIGN, RMC_USERFONTSIZE )
    oChart:Draw( nChartId )
+   IF HB_ISSTRING( cFile )
+      oChart:Draw2File( nChartId, cFile, 0, 0, 0 )
+   ENDIF
    oChart:Reset( nChartId )
 
    RETURN NIL
 
-FUNCTION Graphic7( hWnd )
+FUNCTION Graphic7( hWnd, cFile )
 
    LOCAL aData, sTemp
    LOCAL nChartId, oChart := ChartClass():New()
@@ -214,11 +232,14 @@ FUNCTION Graphic7( hWnd )
    oChart:AddBarSeries( nChartId, 1, aData, 5, RMC_BARGROUP, RMC_BAR_HOVER, .F., RMC_COLOR_DEFAULT, .F., 1, RMC_VLABEL_NONE, 1, RMC_HATCHBRUSH_OFF )
    oChart:SetWatermark( RMC_USERWM, RMC_USERWMCOLOR, RMC_USERWMLUCENT, RMC_USERWMALIGN, RMC_USERFONTSIZE )
    oChart:Draw( nChartId )
+   IF HB_ISSTRING( cFile )
+      oChart:Draw2File( nChartId, cFile, 0, 0, 0 )
+   ENDIF
    oChart:Reset( nChartId )
 
    RETURN NIL
 
-FUNCTION Graphic8( hWnd )
+FUNCTION Graphic8( hWnd, cFile )
 
    LOCAL sTemp, aData
    LOCAL nChartId, oChart := ChartClass():New()
@@ -236,11 +257,14 @@ FUNCTION Graphic8( hWnd )
    oChart:AddBarSeries( nChartId, 1, aData, 5, RMC_BARSINGLE, RMC_BAR_FLAT_GRADIENT2, .F., RMC_COLOR_DEFAULT, .F., 1, RMC_VLABEL_NONE, 1, RMC_HATCHBRUSH_OFF )
    oChart:SetWatermark( RMC_USERWM, RMC_USERWMCOLOR, RMC_USERWMLUCENT, RMC_USERWMALIGN, RMC_USERFONTSIZE )
    oChart:Draw( nChartId )
+   IF HB_ISSTRING( cFile )
+      oChart:Draw2File( nChartId, cFile, 0, 0, 0 )
+   ENDIF
    oChart:Reset( nChartId )
 
    RETURN NIL
 
-FUNCTION Graphic9( hWnd )
+FUNCTION Graphic9( hWnd, cFile )
 
    LOCAL aColor, aData, sTemp
    LOCAL nChartId, oChart := ChartClass():New()
@@ -256,11 +280,14 @@ FUNCTION Graphic9( hWnd )
    oChart:COText( nChartId, 1, sTemp, 100, 270, 400, 50, RMC_BOX_3D_SHADOW, RMC_COLOR_MOCCASIN, RMC_COLOR_DEFAULT, 0, RMC_LINE_HORIZONTAL, RMC_COLOR_MAROON, "09C" )
    oChart:SetWatermark( "chartclass", RMC_COLOR_AUTUMN_ORANGE, 25, 1, RMC_USERFONTSIZE )
    oChart:Draw( nChartId )
+   IF HB_ISSTRING( cFile )
+      oChart:Draw2File( nChartId, cFile, 0, 0, 0 )
+   ENDIF
    oChart:Reset( nChartId )
 
    RETURN NIL
 
-FUNCTION Graphic10( hWnd )
+FUNCTION Graphic10( hWnd, cFile )
 
    LOCAL sTemp, aData, aXPoints, aYPoints, nAverage := 0, nL := 0, nT := 0, nR := 0, nB := 0
    LOCAL nChartId, oChart := ChartClass():New()
@@ -284,6 +311,9 @@ FUNCTION Graphic10( hWnd )
    oChart:COLine( nChartId, 2, aXPoints, aYPoints, 3, RMC_FLAT_LINE, RMC_COLOR_GREEN, 0, 2, 0, RMC_ANCHOR_ARROW_OPEN )
    oChart:COText( nChartId, 3, "Average: " + LTrim(Transform(nAverage,"999,999,999.99")), 480, 169 ,0, 0, 0, 0, 0, 0, 0, 0, "" )
    oChart:Draw(nChartId)
+   IF HB_ISSTRING( cFile )
+      oChart:Draw2File( nChartId, cFile, 0, 0, 0 )
+   ENDIF
    oChart:Reset( nChartId )
    HB_SYMBOL_UNUSED( sTemp + aData + aXPoints + aYPoints + nL + nT + nR + nB  + nAverage )
 
