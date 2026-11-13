@@ -21,17 +21,20 @@ PROCEDURE Main()
    aList := { @Graphic1(), @Graphic2(), @Graphic3(), @Graphic4(), @Graphic5(), ;
               @Graphic6(), @Graphic7(), @Graphic8(), @Graphic9(), @Graphic10() }
    FOR nCont = 1 TO Len( aList )
+      oChart:SetWatermark( "", 0, 0, 0, 0 ) // watermark is global, only sample 9 has one
       aList[ nCont ]:Exec( 0, cPath + "sample_" + StrZero( nCont, 2 ) + ".png" )
       ? "sample", nCont
    NEXT
 
    aList := { @Graphic11(), @Graphic12(), @Graphic13(), @Graphic14(), @Graphic15(), @Graphic16() }
    FOR nCont = 1 TO Len( aList )
+      oChart:SetWatermark( "", 0, 0, 0, 0 ) // watermark is global, only sample 9 has one
       aList[ nCont ]:Exec( 0, IMAGE_WIDTH, IMAGE_HEIGHT, cPath + "sample_" + StrZero( nCont + 10, 2 ) + ".png" )
       ? "sample", nCont + 10
    NEXT
 
    FOR nCont = 1 TO RmcSampleCount()
+      oChart:SetWatermark( "", 0, 0, 0, 0 )
       nId := oChart:GetChartId()
       RmcSample( nCont, 0, nId, .T. )
       oChart:Draw( nId )
