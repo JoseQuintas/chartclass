@@ -131,7 +131,9 @@ RMC_AddBarSeries( nCtrlId, nRegion, aData, nDataCount, nType, nStyle, lLucent, n
 ```
 
 - `nType`: `RMC_BARSINGLE`, `RMC_BARGROUP`, `RMC_BARSTACKED`, `RMC_BARSTACKED100`, `RMC_FLOATINGBAR`,
-  `RMC_FLOATINGBARGROUP` (floating bars: pairs start/end in `aData`).
+  `RMC_FLOATINGBARGROUP` (floating bars: pairs start/end in `aData`),
+  `RMC_BARWATERFALL` (chartclass: each value starts on the end of the previous one, up green, down red),
+  `RMC_BARWATERFALLTOTAL` (the same, with one more bar for the total, in series color; one label more).
 - `nStyle`: `RMC_BAR_FLAT`, `RMC_BAR_FLAT_GRADIENT1`, `RMC_BAR_FLAT_GRADIENT2`, `RMC_BAR_HOVER`,
   `RMC_BAR_3D`, `RMC_BAR_3D_GRADIENT`, `RMC_COLUMN_FLAT`, `RMC_COLUMN_3D`, `RMC_COLUMN_FLUTED`...
 - `nColor`: `RMC_COLOR_DEFAULT` = automatic color for each series.
@@ -153,7 +155,7 @@ RMC_AddLineSeries( nCtrlId, nRegion, aData, nDataCount, aPPC, nPPCCount, nType, 
 - `nSymbol`: `RMC_SYMBOL_NONE`, `_BULLET`, `_ROUND`, `_DIAMOND`, `_SQUARE`, `_STAR`... (`_SMALL` variants).
 - `aPPC` (points per column): when there are more points than labels, how many points go in each label.
 
-### Pie, donut, pyramid
+### Pie, donut, pyramid, gauge, treemap, KPI card
 
 ```
 RMC_AddGridlessSeries( nCtrlId, nRegion, aData, nDataCount, aColor, nColorCount, nStyle,
@@ -162,6 +164,15 @@ RMC_AddGridlessSeries( nCtrlId, nRegion, aData, nDataCount, aColor, nColorCount,
 
 - `nStyle`: `RMC_PIE_FLAT`, `RMC_PIE_GRADIENT`, `RMC_PIE_3D`, `RMC_PIE_3D_GRADIENT`, `RMC_DONUT_*`,
   `RMC_PYRAMIDE`, `RMC_PYRAMIDE3`.
+- chartclass styles, not in RMChart:
+  - `RMC_GAUGE`: half circle. `{ nValue }` = arc until the value, automatic scale from zero.
+    `{ nValue, nLimit1, ..., nMax }` = colored bands (default red, yellow, green) and a needle.
+    `aColor`: color 1 = value arc, next colors = bands.
+  - `RMC_TREEMAP`: one rectangle by value, area by value, bigger first. Names from the legend
+    with `RMC_LEGEND_ONVLABELS`, value as `nValueLabel`. Zero and negative values are not shown.
+  - `RMC_KPICARD`: big number. `{ nValue }` or `{ nValue, nPrevious }`, with previous shows the
+    variation in percent with an arrow. `aColor`: value, up, down. Legend on labels = description.
+  - Gauge and card: legend with `RMC_LEGEND_ONVLABELS`, item 1 is written below the value.
 - `nAlignment`: `RMC_FULL`, `RMC_HALF_TOP`, `_RIGHT`, `_BOTTOM`, `_LEFT`.
 - `nExplodeMode`: `RMC_EXPLODE_NONE`, `RMC_EXPLODE_SMALLEST`, `RMC_EXPLODE_BIGGEST`, or the number of the slice.
 - `aColor`: one color for each slice, or empty for automatic colors.

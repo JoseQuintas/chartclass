@@ -252,6 +252,8 @@ static const struct
 #define RMC_BARSTACKED100         4
 #define RMC_FLOATINGBAR           5
 #define RMC_FLOATINGBARGROUP      6
+#define RMC_BARWATERFALL          7
+#define RMC_BARWATERFALLTOTAL     8
 
 #define RMC_BAR_FLAT              1
 #define RMC_BAR_FLAT_GRADIENT1    2
@@ -335,6 +337,9 @@ static const struct
 #define RMC_PYRAMIDE3             60
 #define RMC_PYRAMIDE3_2PARTS      61
 #define RMC_PYRAMIDE_3PARTS       62
+#define RMC_GAUGE                 63
+#define RMC_TREEMAP               64
+#define RMC_KPICARD               65
 
 #define RMC_FULL                  1
 #define RMC_HALF_TOP              2
@@ -1701,9 +1706,17 @@ static HB_BOOL chc_IsFloating( CHC_SERIES * pSeries )
    return pSeries->iKind == CHC_SER_BAR && ( pSeries->iType == RMC_FLOATINGBAR || pSeries->iType == RMC_FLOATINGBARGROUP );
 }
 
+/* chartclass: waterfall, each bar starts on the end of previous one, total type has one more bar */
+static HB_BOOL chc_IsWaterfall( CHC_SERIES * pSeries )
+{
+   return pSeries->iKind == CHC_SER_BAR && ( pSeries->iType == RMC_BARWATERFALL || pSeries->iType == RMC_BARWATERFALLTOTAL );
+}
+
 /* high-low has four values by point: open, high, low, close */
 static int chc_SeriesPoints( CHC_SERIES * pSeries )
 {
+   if( pSeries->iKind == CHC_SER_BAR && pSeries->iType == RMC_BARWATERFALLTOTAL )
+      return pSeries->nData + 1;
    if( chc_IsFloating( pSeries ) )
       return pSeries->nData / 2;
    return pSeries->iKind == CHC_SER_HIGHLOW ? pSeries->nData / 4 : pSeries->nData;
@@ -2372,7 +2385,7 @@ static void chc_BarsDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_GRIDINFO * pInf
       CHC_SERIES * pSeries = &pRegion->series[ n ];
       int  iAxis = ( pSeries->iAxis == 2 && pRegion->nDAxis > 1 ) ? 1 : 0;
       int  nDecimals = pRegion->daxis[ iAxis ].lSet ? pRegion->daxis[ iAxis ].nDecimals : 0;
-      double dSum = 0;
+      double dSum = 0, dCum = 0;
 
       if( aSlot[ n ] < 0 )
          continue;
@@ -2385,7 +2398,8 @@ static void chc_BarsDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_GRIDINFO * pInf
       for( i = 0; i < chc_SeriesPoints( pSeries ) && i < pInfo->nCat; i++ )
       {
          HB_BOOL lFloat = chc_IsFloating( pSeries );
-         double dValue = lFloat ? pSeries->pData[ i * 2 + 1 ] : pSeries->pData[ i ], dFrom, dTo;
+         HB_BOOL lFall = chc_IsWaterfall( pSeries );
+         double dValue = lFloat ? pSeries->pData[ i * 2 + 1 ] : ( i < pSeries->nData ? pSeries->pData[ i ] : dCum ), dFrom, dTo;
          REAL   p1, p2, fStart;
          CHC_BOX bar;
          ARGB   color = chc_PointColor( pRegion, n, i );
@@ -2406,6 +2420,26 @@ static void chc_BarsDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_GRIDINFO * pInf
                dFrom = pNeg[ i ];
                dTo   = pNeg[ i ] += dValue;
             }
+         }
+         else if( lFall )
+         {
+            /* up green, down red, total with series color, unless color by point */
+            if( i < pSeries->nData )
+            {
+               dFrom = dCum;
+               dTo   = dCum += dValue;
+               if( ! ( pSeries->pColors && i < pSeries->nColors && pSeries->pColors[ i ] != RMC_COLOR_DEFAULT ) )
+                  color = dValue >= 0 ? 0xFF3BAA5C : 0xFFE0453A;
+            }
+            else
+            {
+               dFrom = 0;
+               dTo   = dCum;
+            }
+            if( dFrom < pInfo->dMin[ iAxis ] )
+               dFrom = pInfo->dMin[ iAxis ];
+            if( dFrom > pInfo->dMax[ iAxis ] )
+               dFrom = pInfo->dMax[ iAxis ];
          }
          else
          {
@@ -2442,6 +2476,15 @@ static void chc_BarsDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_GRIDINFO * pInf
          chc_BarDraw( dc, &bar, color, pSeries->iStyle, ! pInfo->lVertical );
          if( pSeries->iHatch == RMC_HATCHBRUSH_ON )
             chc_BarHatch( dc, &bar, color, n );
+         if( lFall && i + 1 < chc_SeriesPoints( pSeries ) && i + 1 < pInfo->nCat )
+         {
+            /* dotted line from the end of this bar to the next one */
+            REAL fEnd = ( REAL ) floor( chc_ValuePos( pInfo, iAxis, dTo ) + 0.5 );
+            if( pInfo->lVertical )
+               chc_Line( dc, 0xFF808080, RMC_LINESTYLEDOT, bar.x + bar.w, fEnd, bar.x + fCat, fEnd );
+            else
+               chc_Line( dc, 0xFF808080, RMC_LINESTYLEDOT, fEnd, bar.y + bar.h, fEnd, bar.y + fCat );
+         }
          if( pSeries->iStyle == RMC_COLUMN_FLAT && ! lFloat )
          {
             /* cap only on the last bar of the stack */
@@ -2460,7 +2503,7 @@ static void chc_BarsDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_GRIDINFO * pInf
                chc_BarCap( dc, &bar, color, ! pInfo->lVertical, dValue < 0 );
          }
 
-         chc_ValueText( pSeries, lFloat ? dValue : pSeries->pData[ i ], dSum, nDecimals, "", szLabel, sizeof( szLabel ) );
+         chc_ValueText( pSeries, lFloat || lFall ? dValue : pSeries->pData[ i ], dSum, nDecimals, "", szLabel, sizeof( szLabel ) );
          if( *szLabel )
          {
             REAL tw, th;
@@ -3160,6 +3203,7 @@ static void chc_DataRange( CHC_REGION * pRegion, int iAxis, double * pLow, doubl
    {
       CHC_SERIES * pSeries = &pRegion->series[ n ];
       int iSerAxis = ( pSeries->iAxis == 2 && pRegion->nDAxis > 1 ) ? 1 : 0;
+      double dCum = 0;
       if( pSeries->iKind == CHC_SER_GRIDLESS || pSeries->iKind == CHC_SER_XY || pSeries->lHide || iSerAxis != iAxis )
          continue;
       if( ( pSeries->iType == RMC_BARSTACKED100 && pSeries->iKind == CHC_SER_BAR ) ||
@@ -3177,6 +3221,12 @@ static void chc_DataRange( CHC_REGION * pRegion, int iAxis, double * pLow, doubl
                *pHigh = HB_MAX( *pHigh, HB_MAX( d, pSeries->pData[ i - 1 ] ) );
                *pLow  = HB_MIN( *pLow, HB_MIN( d, pSeries->pData[ i - 1 ] ) );
             }
+         }
+         else if( chc_IsWaterfall( pSeries ) )
+         {
+            *pHigh = HB_MAX( *pHigh, HB_MAX( dCum, dCum + d ) );
+            *pLow  = HB_MIN( *pLow, HB_MIN( dCum, dCum + d ) );
+            dCum += d;
          }
          else if( pSeries->iKind == CHC_SER_BAR && pSeries->iType == RMC_BARSTACKED )
          {
@@ -4235,6 +4285,362 @@ static void chc_PyramidDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_SERIES * pSe
    }
 }
 
+/* ---------------------------------------------------------------- chartclass: gauge, treemap and KPI card */
+
+/* color of point n given on aColor, or default */
+static ARGB chc_GivenColor( CHC_SERIES * pSeries, int n, ARGB defColor )
+{
+   if( pSeries->pColors && n < pSeries->nColors && pSeries->pColors[ n ] != RMC_COLOR_DEFAULT )
+      return chc_Color( pSeries->pColors[ n ], defColor );
+   return defColor;
+}
+
+/* value with the decimals it has, at most 2 */
+static void chc_ShowValue( double dValue, char * szDest, int iSize )
+{
+   int nDecimals = chc_Decimals( dValue );
+
+   chc_FormatValue( dValue, nDecimals > 2 ? 2 : nDecimals, "", szDest, iSize );
+}
+
+/* bigger font size, down to iMin, where text fits on w x h */
+static int chc_FitFont( CHC_DC * dc, const char * szText, int iMax, int iMin, HB_BOOL lBold, REAL w, REAL h )
+{
+   REAL tw, th;
+   int  iSize;
+
+   for( iSize = iMax; iSize > iMin; iSize -= 2 )
+   {
+      chc_TextSize( dc, szText, iSize, lBold, &tw, &th );
+      if( tw <= w && th <= h )
+         break;
+   }
+   return iSize < iMin ? iMin : iSize;
+}
+
+/* part of a ring, angles as GDI+, clockwise from the right */
+static void chc_RingArc( CHC_DC * dc, REAL cx, REAL cy, REAL fR, REAL fRing, double dStart, double dSweep, ARGB color )
+{
+   GpPath * path = NULL;
+   GpBrush * brush;
+   REAL fIn = fR - fRing;
+
+   if( dSweep < 0.05 )
+      return;
+   pGdipCreatePath( GP_FILLALTERNATE, &path );
+   pGdipAddPathArc( path, cx - fR, cy - fR, fR * 2, fR * 2, ( REAL ) dStart, ( REAL ) dSweep );
+   pGdipAddPathArc( path, cx - fIn, cy - fIn, fIn * 2, fIn * 2, ( REAL ) ( dStart + dSweep ), ( REAL ) -dSweep );
+   pGdipClosePathFigure( path );
+   brush = chc_Solid( color );
+   pGdipFillPath( dc->g, brush, path );
+   pGdipDeleteBrush( brush );
+   pGdipDeletePath( path );
+}
+
+/*
+RMC_GAUGE: half circle from left to right
+aData = { value } scale from zero to automatic max, arc filled until the value over a gray track
+aData = { value, limit1, limit2, ..., max } colored bands from zero to each limit and a needle
+aColor: color 1 = value arc, colors 2... = bands, default red, yellow and green
+legend on labels: item 1 below the value
+*/
+static void chc_GaugeDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_SERIES * pSeries, CHC_BOX * pArea )
+{
+   static const ARGB s_bands[] = { 0xFFE0453A, 0xFFF2B33D, 0xFF3BAA5C };
+   int     n, iSeries = ( int ) ( pSeries - pRegion->series ), nBands = pSeries->nData - 1, iBig;
+   double  dValue = pSeries->pData[ 0 ], dMin = 0, dMax, dShow;
+   HB_BOOL lOnLabels = pRegion->legend.lSet && ! pRegion->legend.lHide && pRegion->legend.iAlign == RMC_LEGEND_ONVLABELS;
+   REAL    tw, th8, thBig, thDesc = 0, fR, fRing, cx, cy, fTotal;
+   char    szText[ 96 ], szDesc[ 256 ];
+
+   if( nBands > 0 )
+      dMax = pSeries->pData[ pSeries->nData - 1 ];
+   else
+   {
+      chc_AutoScale( HB_MIN( dValue, 0 ), HB_MAX( dValue, 0 ), 6, &dMin, &dMax );
+      if( dMin > 0 )
+         dMin = 0;
+   }
+   if( dMax <= dMin )
+      dMax = dMin + 1;
+   dShow = HB_MAX( dMin, HB_MIN( dMax, dValue ) );
+
+   *szDesc = '\0';
+   if( lOnLabels )
+      chc_ListItem( pRegion->legend.szText, 0, szDesc, sizeof( szDesc ) );
+
+   /* radius from width and height, value and description below the center */
+   chc_TextSize( dc, "Ag", 8, HB_FALSE, &tw, &th8 );
+   chc_ShowValue( dValue, szText, sizeof( szText ) );
+   fR = ( pArea->w - 20 ) / 2;
+   iBig = chc_FitFont( dc, szText, 20, 8, HB_TRUE, fR * 1.4f, HB_MAX( pArea->h * 0.18f, 10 ) );
+   chc_TextSize( dc, szText, iBig, HB_TRUE, &tw, &thBig );
+   if( *szDesc )
+      chc_TextSize( dc, szDesc, 8, HB_FALSE, &tw, &thDesc );
+   fR = HB_MIN( fR, pArea->h - th8 - thBig - thDesc - 12 );
+   if( fR < 10 )
+      return;
+   fRing = fR * 0.28f;
+   fTotal = fR + th8 + thBig + thDesc + 8;
+   cx = pArea->x + pArea->w / 2;
+   cy = pArea->y + ( pArea->h - fTotal ) / 2 + fR;
+
+   if( nBands > 0 )
+   {
+      double dFrom = dMin;
+      for( n = 1; n <= nBands; n++ )
+      {
+         double dTo = HB_MIN( pSeries->pData[ n ], dMax );
+         int  iBand = nBands == 1 ? 2 : ( nBands == 2 ? ( n - 1 ) * 2 : ( n - 1 ) * 3 / nBands );
+         ARGB color = chc_GivenColor( pSeries, n, s_bands[ iBand ] );
+         if( pSeries->lLucent )
+            color = chc_Alpha( color, 170 );
+         if( dTo > dFrom )
+            chc_RingArc( dc, cx, cy, fR, fRing, 180 + ( dFrom - dMin ) * 180 / ( dMax - dMin ), ( dTo - dFrom ) * 180 / ( dMax - dMin ), color );
+         dFrom = HB_MAX( dFrom, dTo );
+      }
+      /* needle */
+      {
+         double a = ( 180 + ( dShow - dMin ) * 180 / ( dMax - dMin ) ) * 3.14159265358979 / 180;
+         REAL fLen = fR - fRing * 0.35f, fBase = HB_MAX( fRing * 0.16f, 3 );
+         CHC_POINTF pt[ 3 ];
+         GpBrush * brush = chc_Solid( 0xFF404040 );
+         pt[ 0 ].X = cx + ( REAL ) cos( a ) * fLen;  pt[ 0 ].Y = cy + ( REAL ) sin( a ) * fLen;
+         pt[ 1 ].X = cx + ( REAL ) sin( a ) * fBase; pt[ 1 ].Y = cy - ( REAL ) cos( a ) * fBase;
+         pt[ 2 ].X = cx - ( REAL ) sin( a ) * fBase; pt[ 2 ].Y = cy + ( REAL ) cos( a ) * fBase;
+         pGdipFillPolygon( dc->g, brush, pt, 3, GP_FILLALTERNATE );
+         pGdipFillEllipse( dc->g, brush, cx - fBase * 1.6f, cy - fBase * 1.6f, fBase * 3.2f, fBase * 3.2f );
+         pGdipDeleteBrush( brush );
+      }
+   }
+   else
+   {
+      ARGB color = chc_GivenColor( pSeries, 0, chc_DefColor( pSeries, iSeries ) );
+      if( pSeries->lLucent )
+         color = chc_Alpha( color, 170 );
+      chc_RingArc( dc, cx, cy, fR, fRing, 180, 180, 0xFFE6E6E6 );
+      chc_RingArc( dc, cx, cy, fR, fRing, 180, ( dShow - dMin ) * 180 / ( dMax - dMin ), color );
+   }
+
+   /* min and max at the ends, value and description below */
+   {
+      char szLimit[ 64 ];
+      chc_ShowValue( dMin, szLimit, sizeof( szLimit ) );
+      chc_TextAngle( dc, szLimit, 8, HB_FALSE, 0xFF606060, cx - fR + fRing / 2, cy + th8 / 2 + 2, 0 );
+      chc_ShowValue( dMax, szLimit, sizeof( szLimit ) );
+      chc_TextAngle( dc, szLimit, 8, HB_FALSE, 0xFF606060, cx + fR - fRing / 2, cy + th8 / 2 + 2, 0 );
+   }
+   chc_TextRect( dc, szText, iBig, HB_TRUE, 0xFF303030, pArea->x, cy + th8 + 4, pArea->w, thBig, GP_ALIGNCENTER, GP_ALIGNCENTER );
+   if( *szDesc )
+      chc_TextRect( dc, szDesc, 8, HB_FALSE, 0xFF606060, pArea->x, cy + th8 + 4 + thBig, pArea->w, thDesc, GP_ALIGNCENTER, GP_ALIGNCENTER );
+}
+
+/* squarified treemap: worst aspect ratio of a row with items i0 to i1 on a side */
+static double chc_WorstRatio( double * pArea, int i0, int i1, double dSide )
+{
+   double dSum = 0, dMax = 0, dMin = 1e300, s2, w2;
+   int i;
+
+   for( i = i0; i <= i1; i++ )
+   {
+      dSum += pArea[ i ];
+      dMax = HB_MAX( dMax, pArea[ i ] );
+      dMin = HB_MIN( dMin, pArea[ i ] );
+   }
+   s2 = dSum * dSum;
+   w2 = dSide * dSide;
+   if( s2 <= 0 || dMin <= 0 )
+      return 1e300;
+   return HB_MAX( w2 * dMax / s2, s2 / ( w2 * dMin ) );
+}
+
+/*
+RMC_TREEMAP: one rectangle by value, area by value, bigger first, from top left
+names from legend on labels, value label as pie (percent, absolute or twin)
+zero and negative values are not shown
+*/
+static void chc_TreemapDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_SERIES * pSeries, CHC_BOX * pArea )
+{
+   int      n, k, i0, i1, nItems = 0, nData = pSeries->nData, iSeries = ( int ) ( pSeries - pRegion->series );
+   int *    pOrder;
+   double * pAreas, dTotal = 0;
+   CHC_BOX  rest, * pBoxes;
+   HB_BOOL  lOnLabels = pRegion->legend.lSet && ! pRegion->legend.lHide && pRegion->legend.iAlign == RMC_LEGEND_ONVLABELS;
+
+   pOrder = ( int * ) hb_xgrab( sizeof( int ) * nData );
+   for( n = 0; n < nData; n++ )
+   {
+      if( pSeries->pData[ n ] > 0 )
+      {
+         pOrder[ nItems++ ] = n;
+         dTotal += pSeries->pData[ n ];
+      }
+   }
+   rest = *pArea;
+   rest.x += 2; rest.y += 2; rest.w -= 4; rest.h -= 4;
+   if( nItems == 0 || dTotal <= 0 || rest.w < 4 || rest.h < 4 )
+   {
+      hb_xfree( pOrder );
+      return;
+   }
+   /* bigger first, keeping the order of equal values */
+   for( n = 1; n < nItems; n++ )
+   {
+      int t = pOrder[ n ];
+      for( k = n; k > 0 && pSeries->pData[ pOrder[ k - 1 ] ] < pSeries->pData[ t ]; k-- )
+         pOrder[ k ] = pOrder[ k - 1 ];
+      pOrder[ k ] = t;
+   }
+   pAreas = ( double * ) hb_xgrab( sizeof( double ) * nItems );
+   pBoxes = ( CHC_BOX * ) hb_xgrab( sizeof( CHC_BOX ) * nItems );
+   for( k = 0; k < nItems; k++ )
+      pAreas[ k ] = pSeries->pData[ pOrder[ k ] ] * rest.w * rest.h / dTotal;
+
+   for( i0 = 0; i0 < nItems; i0 = i1 + 1 )
+   {
+      double dSide = HB_MIN( rest.w, rest.h ), dSum = 0, dThick, dPos;
+      HB_BOOL lColumn = rest.w >= rest.h;
+
+      i1 = i0;
+      while( i1 + 1 < nItems && chc_WorstRatio( pAreas, i0, i1 + 1, dSide ) <= chc_WorstRatio( pAreas, i0, i1, dSide ) )
+         i1++;
+      for( k = i0; k <= i1; k++ )
+         dSum += pAreas[ k ];
+      dThick = dSum / ( lColumn ? HB_MAX( rest.h, 1 ) : HB_MAX( rest.w, 1 ) );
+      if( i1 == nItems - 1 )
+         dThick = lColumn ? rest.w : rest.h;
+      dPos = lColumn ? rest.y : rest.x;
+      for( k = i0; k <= i1; k++ )
+      {
+         double dLen = dSum > 0 ? pAreas[ k ] * ( lColumn ? rest.h : rest.w ) / dSum : 0;
+         if( lColumn )
+         {
+            pBoxes[ k ].x = rest.x;           pBoxes[ k ].w = ( REAL ) dThick;
+            pBoxes[ k ].y = ( REAL ) dPos;    pBoxes[ k ].h = ( REAL ) dLen;
+         }
+         else
+         {
+            pBoxes[ k ].x = ( REAL ) dPos;    pBoxes[ k ].w = ( REAL ) dLen;
+            pBoxes[ k ].y = rest.y;           pBoxes[ k ].h = ( REAL ) dThick;
+         }
+         dPos += dLen;
+      }
+      if( lColumn )
+      {
+         rest.x += ( REAL ) dThick;
+         rest.w -= ( REAL ) dThick;
+      }
+      else
+      {
+         rest.y += ( REAL ) dThick;
+         rest.h -= ( REAL ) dThick;
+      }
+   }
+
+   for( k = 0; k < nItems; k++ )
+   {
+      CHC_BOX * pBox = &pBoxes[ k ];
+      int  iPoint = pOrder[ k ];
+      ARGB color = chc_PointColor( pRegion, iSeries, iPoint );
+      char szName[ 256 ], szValue[ 96 ], szText[ 384 ];
+      REAL tw, th;
+
+      if( pSeries->lLucent )
+         color = chc_Alpha( color, 170 );
+      if( pBox->w < 2 || pBox->h < 2 )
+         continue;
+      chc_FillRect( dc, color, pBox->x + 1, pBox->y + 1, pBox->w - 2, pBox->h - 2 );
+      if( pSeries->iHatch == RMC_HATCHBRUSH_ON )
+         chc_BarHatch( dc, pBox, color, iPoint );
+
+      *szName = '\0';
+      if( lOnLabels )
+         chc_ListItem( pRegion->legend.szText, iPoint, szName, sizeof( szName ) );
+      chc_ValueText( pSeries, pSeries->pData[ iPoint ], dTotal, chc_Decimals( pSeries->pData[ iPoint ] ), "", szValue, sizeof( szValue ) );
+      hb_strncpy( szText, szName, sizeof( szText ) - 1 );
+      if( *szValue )
+         hb_strncat( hb_strncat( szText, *szText ? "\n" : "", sizeof( szText ) - 1 ), szValue, sizeof( szText ) - 1 );
+      if( *szText == '\0' )
+         continue;
+      /* whole text, or only the name, or nothing when it does not fit */
+      chc_TextSize( dc, szText, 8, HB_FALSE, &tw, &th );
+      if( tw + 8 > pBox->w || th + 6 > pBox->h )
+      {
+         hb_strncpy( szText, *szName ? szName : szValue, sizeof( szText ) - 1 );
+         chc_TextSize( dc, szText, 8, HB_FALSE, &tw, &th );
+         if( tw + 8 > pBox->w || th + 6 > pBox->h )
+            continue;
+      }
+      chc_TextRect( dc, szText, 8, HB_FALSE, chc_Contrast( color ), pBox->x + 5, pBox->y + 4, pBox->w - 8, pBox->h - 6, GP_ALIGNNEAR, GP_ALIGNNEAR );
+   }
+   hb_xfree( pBoxes );
+   hb_xfree( pAreas );
+   hb_xfree( pOrder );
+}
+
+/*
+RMC_KPICARD: big number, as Power BI card
+aData = { value } or { value, previous }, with previous shows the variation in percent with an arrow
+aColor: color 1 = value, color 2 = up (green), color 3 = down (red)
+legend on labels: item 1 is the description below the value
+*/
+static void chc_CardDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_SERIES * pSeries, CHC_BOX * pArea )
+{
+   double  dValue = pSeries->pData[ 0 ];
+   HB_BOOL lOnLabels = pRegion->legend.lSet && ! pRegion->legend.lHide && pRegion->legend.iAlign == RMC_LEGEND_ONVLABELS;
+   HB_BOOL lVar = pSeries->nData > 1 && pSeries->pData[ 1 ] != 0;
+   char    szText[ 96 ], szDesc[ 256 ], szVar[ 96 ];
+   int     iBig, iSmall;
+   REAL    tw, thBig, thDesc = 0, thVar = 0, twVar = 0, fTotal, y;
+   ARGB    varColor = 0;
+
+   chc_ShowValue( dValue, szText, sizeof( szText ) );
+   *szDesc = '\0';
+   if( lOnLabels )
+      chc_ListItem( pRegion->legend.szText, 0, szDesc, sizeof( szDesc ) );
+   *szVar = '\0';
+   if( lVar )
+   {
+      double dPct = ( dValue - pSeries->pData[ 1 ] ) * 100 / fabs( pSeries->pData[ 1 ] );
+      char szPct[ 64 ];
+      chc_FormatValue( dPct, 1, "", szPct, sizeof( szPct ) );
+      hb_snprintf( szVar, sizeof( szVar ), "%s%s%%", dPct > 0 ? "+" : "", szPct );
+      varColor = dPct >= 0 ? chc_GivenColor( pSeries, 1, 0xFF2E9E50 ) : chc_GivenColor( pSeries, 2, 0xFFD9372B );
+   }
+
+   iBig = chc_FitFont( dc, szText, 40, 8, HB_TRUE, pArea->w - 16, pArea->h * ( *szDesc || lVar ? 0.5f : 0.8f ) );
+   iSmall = HB_MAX( 8, HB_MIN( 12, iBig / 3 ) );
+   chc_TextSize( dc, szText, iBig, HB_TRUE, &tw, &thBig );
+   if( *szDesc )
+      chc_TextSize( dc, szDesc, iSmall, HB_FALSE, &tw, &thDesc );
+   if( lVar )
+      chc_TextSize( dc, szVar, iSmall, HB_TRUE, &twVar, &thVar );
+   fTotal = thBig + thDesc + ( lVar ? thVar + 4 : 0 );
+   y = pArea->y + ( pArea->h - fTotal ) / 2;
+
+   chc_TextRect( dc, szText, iBig, HB_TRUE, chc_GivenColor( pSeries, 0, 0xFF252525 ), pArea->x, y, pArea->w, thBig, GP_ALIGNCENTER, GP_ALIGNCENTER );
+   y += thBig;
+   if( *szDesc )
+   {
+      chc_TextRect( dc, szDesc, iSmall, HB_FALSE, 0xFF606060, pArea->x, y, pArea->w, thDesc, GP_ALIGNCENTER, GP_ALIGNCENTER );
+      y += thDesc;
+   }
+   if( lVar )
+   {
+      /* arrow at left of the text, up or down */
+      REAL fA = thVar * 0.5f, x0 = pArea->x + ( pArea->w - twVar - fA - 4 ) / 2, ym = y + 4 + thVar / 2;
+      CHC_POINTF pt[ 3 ];
+      GpBrush * brush = chc_Solid( varColor );
+      HB_BOOL lUp = dValue >= pSeries->pData[ 1 ];
+      pt[ 0 ].X = x0;          pt[ 0 ].Y = ym + ( lUp ? fA / 2 : -fA / 2 );
+      pt[ 1 ].X = x0 + fA;     pt[ 1 ].Y = pt[ 0 ].Y;
+      pt[ 2 ].X = x0 + fA / 2; pt[ 2 ].Y = ym + ( lUp ? -fA / 2 : fA / 2 );
+      pGdipFillPolygon( dc->g, brush, pt, 3, GP_FILLALTERNATE );
+      pGdipDeleteBrush( brush );
+      chc_TextRect( dc, szVar, iSmall, HB_TRUE, varColor, x0 + fA + 4, y + 4, twVar + 2, thVar, GP_ALIGNNEAR, GP_ALIGNCENTER );
+   }
+}
+
 static void chc_GridlessDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_SERIES * pSeries, int iSeries, CHC_BOX * pArea )
 {
    CHC_SLICE * pSlices;
@@ -4254,6 +4660,12 @@ static void chc_GridlessDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_SERIES * pS
 
    if( nData == 0 )
       return;
+   switch( iStyle )
+   {
+      case RMC_GAUGE:   chc_GaugeDraw( dc, pRegion, pSeries, pArea ); return;
+      case RMC_TREEMAP: chc_TreemapDraw( dc, pRegion, pSeries, pArea ); return;
+      case RMC_KPICARD: chc_CardDraw( dc, pRegion, pSeries, pArea ); return;
+   }
    for( n = 0; n < nData; n++ )
    {
       double d = fabs( pSeries->pData[ n ] );

@@ -204,6 +204,8 @@ ze_chartclass.ch - constants for chartclass, same names and values of the RMC_* 
 #define RMC_BARSTACKED100                4
 #define RMC_FLOATINGBAR                  5
 #define RMC_FLOATINGBARGROUP             6
+#define RMC_BARWATERFALL                 7    /* chartclass: each bar starts on the end of previous one, up green, down red */
+#define RMC_BARWATERFALLTOTAL            8    /* chartclass: waterfall with one more bar for the total */
 
 /* LineSeriesType */
 #define RMC_LINE                         21
@@ -304,6 +306,9 @@ ze_chartclass.ch - constants for chartclass, same names and values of the RMC_* 
 #define RMC_PYRAMIDE3                    60
 #define RMC_PYRAMIDE3_2PARTS             61   /* chartclass: 3D with 2 parts, base as a V */
 #define RMC_PYRAMIDE_3PARTS              62   /* chartclass: 2D with 3 parts */
+#define RMC_GAUGE                        63   /* chartclass: half circle, { value } or { value, limit1, ..., max } */
+#define RMC_TREEMAP                      64   /* chartclass: one rectangle by value, area by value */
+#define RMC_KPICARD                      65   /* chartclass: big value, { value } or { value, previous } */
 
 /* PieDonutAlignment */
 #define RMC_FULL                         1

@@ -6,6 +6,8 @@ Graphic13 candlestick + volume bars
 Graphic14 bars with trend line
 Graphic15 save to PNG and RMC file
 Graphic16 chart from RMC file (created on Graphic15)
+Graphic17 KPI cards and gauges
+Graphic18 waterfall and treemap
 */
 
 #include "ze_chartclass.ch"
@@ -174,6 +176,86 @@ FUNCTION Graphic16( hWnd, nWidth, nHeight, cFile )
    // all from file, size too
    oChart:CreateChartFromFile( hWnd, nChartId, 0, 0, .F., "chartclass_test.rmc" )
    oChart:SetCaptionText( nChartId, 1, "Loaded from chartclass_test.rmc" )
+   oChart:Draw( nChartId )
+   IF HB_ISSTRING( cFile )
+      oChart:Draw2File( nChartId, cFile, 0, 0, 0 )
+   ENDIF
+   oChart:Reset( nChartId )
+
+   RETURN NIL
+
+FUNCTION Graphic17( hWnd, nWidth, nHeight, cFile )
+
+   // KPI cards and gauges, as a dashboard
+   LOCAL nChartId, oChart := ChartClass():New()
+   LOCAL nW := Int( ( nWidth - 20 ) / 3 ), nH := Int( nHeight * 0.3 )
+   LOCAL nGW := Int( ( nWidth - 15 ) / 2 )
+
+   nChartId := oChart:GetChartId()
+
+   oChart:CreateChart( hWnd, nChartId, 0, 0, nWidth, nHeight, RMC_COLOR_WHITE, RMC_CTRLSTYLEFLAT, .F., "", "Tahoma", 0, RMC_COLOR_DEFAULT )
+
+   // RMC_KPICARD: { value } or { value, previous }, legend on labels is the description
+   oChart:AddRegion( nChartId, 5, 5, nW, nH, "", .T. )
+   oChart:AddCaption( nChartId, 1, "Sales", RMC_COLOR_TRANSPARENT, RMC_COLOR_DIM_GRAY, 10, .T. )
+   oChart:AddLegend( nChartId, 1, "this month", RMC_LEGEND_ONVLABELS, 0, 0, 0, 0, 0 )
+   oChart:AddGridlessSeries( nChartId, 1, { 1284350.75, 1150200 }, 2, 0, 0, RMC_KPICARD, 0, 0, .F., RMC_VLABEL_DEFAULT, RMC_HATCHBRUSH_OFF, 0 )
+
+   oChart:AddRegion( nChartId, 10 + nW, 5, nW, nH, "", .T. )
+   oChart:AddCaption( nChartId, 2, "Orders", RMC_COLOR_TRANSPARENT, RMC_COLOR_DIM_GRAY, 10, .T. )
+   oChart:AddLegend( nChartId, 2, "vs last month", RMC_LEGEND_ONVLABELS, 0, 0, 0, 0, 0 )
+   oChart:AddGridlessSeries( nChartId, 2, { 342, 365 }, 2, 0, 0, RMC_KPICARD, 0, 0, .F., RMC_VLABEL_DEFAULT, RMC_HATCHBRUSH_OFF, 0 )
+
+   oChart:AddRegion( nChartId, 15 + nW * 2, 5, nW, nH, "", .T. )
+   oChart:AddCaption( nChartId, 3, "Average ticket", RMC_COLOR_TRANSPARENT, RMC_COLOR_DIM_GRAY, 10, .T. )
+   oChart:AddGridlessSeries( nChartId, 3, { 3755.41 }, 1, { RMC_COLOR_ROYAL_BLUE }, 1, RMC_KPICARD, 0, 0, .F., RMC_VLABEL_DEFAULT, RMC_HATCHBRUSH_OFF, 0 )
+
+   // RMC_GAUGE: { value } automatic scale, or { value, limit1, ..., max } bands with needle
+   oChart:AddRegion( nChartId, 5, nH + 10, nGW, -5, "", .T. )
+   oChart:AddCaption( nChartId, 4, "Goal done (%)", RMC_COLOR_TRANSPARENT, RMC_COLOR_DIM_GRAY, 10, .T. )
+   oChart:AddGridlessSeries( nChartId, 4, { 72.5 }, 1, 0, 0, RMC_GAUGE, 0, 0, .F., RMC_VLABEL_DEFAULT, RMC_HATCHBRUSH_OFF, 0 )
+
+   oChart:AddRegion( nChartId, 10 + nGW, nH + 10, -5, -5, "", .T. )
+   oChart:AddCaption( nChartId, 5, "Sales x goal", RMC_COLOR_TRANSPARENT, RMC_COLOR_DIM_GRAY, 10, .T. )
+   oChart:AddLegend( nChartId, 5, "goal 1.100.000", RMC_LEGEND_ONVLABELS, 0, 0, 0, 0, 0 )
+   oChart:AddGridlessSeries( nChartId, 5, { 1284350.75, 800000, 1100000, 1500000 }, 4, 0, 0, RMC_GAUGE, 0, 0, .F., RMC_VLABEL_DEFAULT, RMC_HATCHBRUSH_OFF, 0 )
+
+   oChart:Draw( nChartId )
+   IF HB_ISSTRING( cFile )
+      oChart:Draw2File( nChartId, cFile, 0, 0, 0 )
+   ENDIF
+   oChart:Reset( nChartId )
+
+   RETURN NIL
+
+FUNCTION Graphic18( hWnd, nWidth, nHeight, cFile )
+
+   // waterfall and treemap
+   LOCAL nChartId, oChart := ChartClass():New()
+   LOCAL nW := Int( nWidth * 0.55 )
+   LOCAL cLabels := "Start*Sales*Services*Returns*Taxes*Expenses*Result"
+   LOCAL aFlow   := { 50000, 120000, 30000, -15000, -28000, -64000 }
+   LOCAL cNames  := "Fuel*Lubricants*Filters*Tires*Batteries*Services*Parts*Others"
+   LOCAL aShare  := { 420, 310, 180, 120, 90, 60, 40, 25 }
+
+   nChartId := oChart:GetChartId()
+
+   oChart:CreateChart( hWnd, nChartId, 0, 0, nWidth, nHeight, RMC_COLOR_WHITE, RMC_CTRLSTYLEFLAT, .F., "", "Tahoma", 0, RMC_COLOR_DEFAULT )
+
+   // RMC_BARWATERFALLTOTAL: values are changes, last bar is the total, needs one label more
+   oChart:AddRegion( nChartId, 5, 5, nW, -5, "", .T. )
+   oChart:AddCaption( nChartId, 1, "Waterfall", RMC_COLOR_TRANSPARENT, RMC_COLOR_DIM_GRAY, 10, .T. )
+   oChart:AddGrid( nChartId, 1, RMC_COLOR_WHITE, .F., 0, 0, 0, 0, RMC_BICOLOR_NONE )
+   oChart:AddDataAxis( nChartId, 1, RMC_DATAAXISLEFT, 0, 0, 6, 8, RMC_COLOR_BLACK, RMC_COLOR_LIGHT_GRAY, RMC_LINESTYLEDOT, 0, "", "", "", RMC_TEXTCENTER )
+   oChart:AddLabelAxis( nChartId, 1, cLabels, 1, 7, RMC_LABELAXISBOTTOM, 8, RMC_COLOR_BLACK, RMC_TEXTCENTER, RMC_COLOR_BLACK, RMC_LINESTYLENONE, "" )
+   oChart:AddBarSeries( nChartId, 1, aFlow, Len( aFlow ), RMC_BARWATERFALLTOTAL, RMC_BAR_FLAT, .F., RMC_COLOR_ROYAL_BLUE, .F., 1, RMC_VLABEL_ABSOLUTE, 1, RMC_HATCHBRUSH_OFF )
+
+   // RMC_TREEMAP: names from legend on labels
+   oChart:AddRegion( nChartId, nW + 10, 5, -5, -5, "", .T. )
+   oChart:AddCaption( nChartId, 2, "Treemap", RMC_COLOR_TRANSPARENT, RMC_COLOR_DIM_GRAY, 10, .T. )
+   oChart:AddLegend( nChartId, 2, cNames, RMC_LEGEND_ONVLABELS, 0, 0, 0, 0, 0 )
+   oChart:AddGridlessSeries( nChartId, 2, aShare, Len( aShare ), 0, 0, RMC_TREEMAP, 0, 0, .F., RMC_VLABEL_TWIN, RMC_HATCHBRUSH_OFF, 0 )
+
    oChart:Draw( nChartId )
    IF HB_ISSTRING( cFile )
       oChart:Draw2File( nChartId, cFile, 0, 0, 0 )
