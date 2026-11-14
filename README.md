@@ -94,7 +94,8 @@ methods are accepted too. The `RMC_*()` functions can also be called directly, w
 - `RMC_Draw2Printer()` with hDC 0 shows the printer dialog and prints one page. With a hDC it only
   draws, StartDoc()/StartPage() are of the caller. Position and size in mm, size 0 = printable width.
 - Chart types that RMChart does not have: `RMC_BARWATERFALL` and `RMC_BARWATERFALLTOTAL` (bar series),
-  `RMC_GAUGE`, `RMC_TREEMAP` and `RMC_KPICARD` (gridless series), see samples 17 and 18.
+  `RMC_GAUGE`, `RMC_TREEMAP`, `RMC_KPICARD`, `RMC_FUNNEL` and `RMC_MULTICARD` (gridless series),
+  `RMC_XY_BUBBLE` (XY series), see samples 17 to 19.
 
 ## Tests
 
@@ -157,6 +158,7 @@ Created by `tests/testgallery.prg`, click to see the full size.
 </tr>
 <tr>
 <td><a href="images/sample_18.png"><img src="images/sample_18.png" width="200" alt="sample_18"></a></td>
+<td><a href="images/sample_19.png"><img src="images/sample_19.png" width="200" alt="sample_19"></a></td>
 </tr>
 </table>
 

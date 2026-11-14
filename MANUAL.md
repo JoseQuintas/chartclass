@@ -155,7 +155,7 @@ RMC_AddLineSeries( nCtrlId, nRegion, aData, nDataCount, aPPC, nPPCCount, nType, 
 - `nSymbol`: `RMC_SYMBOL_NONE`, `_BULLET`, `_ROUND`, `_DIAMOND`, `_SQUARE`, `_STAR`... (`_SMALL` variants).
 - `aPPC` (points per column): when there are more points than labels, how many points go in each label.
 
-### Pie, donut, pyramid, gauge, treemap, KPI card
+### Pie, donut, pyramid, gauge, treemap, KPI card, funnel, multi-row card
 
 ```
 RMC_AddGridlessSeries( nCtrlId, nRegion, aData, nDataCount, aColor, nColorCount, nStyle,
@@ -172,6 +172,10 @@ RMC_AddGridlessSeries( nCtrlId, nRegion, aData, nDataCount, aColor, nColorCount,
     with `RMC_LEGEND_ONVLABELS`, value as `nValueLabel`. Zero and negative values are not shown.
   - `RMC_KPICARD`: big number. `{ nValue }` or `{ nValue, nPrevious }`, with previous shows the
     variation in percent with an arrow. `aColor`: value, up, down. Legend on labels = description.
+  - `RMC_FUNNEL`: one horizontal bar by stage, from top, width by value. Names from the legend on labels;
+    `nValueLabel` default and twin = value and percent of the first stage.
+  - `RMC_MULTICARD`: several values, each one with its name (legend on labels) and a color mark;
+    more columns when the rows do not fit.
   - Gauge and card: legend with `RMC_LEGEND_ONVLABELS`, item 1 is written below the value.
 - `nAlignment`: `RMC_FULL`, `RMC_HALF_TOP`, `_RIGHT`, `_BOTTOM`, `_LEFT`.
 - `nExplodeMode`: `RMC_EXPLODE_NONE`, `RMC_EXPLODE_SMALLEST`, `RMC_EXPLODE_BIGGEST`, or the number of the slice.
@@ -184,6 +188,9 @@ RMC_AddGridlessSeries( nCtrlId, nRegion, aData, nDataCount, aColor, nColorCount,
 RMC_AddXYSeries( nCtrlId, nRegion, aDataX, nDataXCount, aDataY, nDataYCount, nColor, nStyle,
                  nLineStyle, nSymbol, nWhichXAxis, nWhichYAxis, nValueLabel )
 ```
+
+- `nStyle` `RMC_XY_BUBBLE` (chartclass, not in RMChart): `aDataY` with pairs `{ y1, size1, y2, size2, ... }`,
+  circle area by size, same scale for all bubble series of the region; size written inside when it fits.
 
 - Needs `RMC_AddXAxis()` and `RMC_AddYAxis()`.
 - `nStyle`: `RMC_XY_LINE`, `_LINE_DOT`, `_LINE_DASH`, `RMC_XY_SYMBOL` (points only), `RMC_XY_CABLE`.

@@ -340,6 +340,8 @@ static const struct
 #define RMC_GAUGE                 63
 #define RMC_TREEMAP               64
 #define RMC_KPICARD               65
+#define RMC_FUNNEL                80
+#define RMC_MULTICARD             81
 
 #define RMC_FULL                  1
 #define RMC_HALF_TOP              2
@@ -447,6 +449,7 @@ static const struct
 #define RMC_XY_LINE_DOT           69
 #define RMC_XY_LINE               70
 #define RMC_XY_SYMBOL             71
+#define RMC_XY_BUBBLE             72
 #define RMC_XY_CABLE              73
 
 #define RMC_YAXISLEFT             9
@@ -1844,7 +1847,7 @@ static void chc_LegendSymbol( CHC_DC * dc, CHC_REGION * pRegion, int iItem, ARGB
       /* as RMChart, a small line or area */
       CHC_POINTF pt[ 6 ];
       int iStyle = pSeries->iStyle;
-      HB_BOOL lSymbolOnly = ( iStyle == RMC_LINE_SYMBOLONLY || iStyle == RMC_XY_SYMBOL );
+      HB_BOOL lSymbolOnly = ( iStyle == RMC_LINE_SYMBOLONLY || iStyle == RMC_XY_SYMBOL || iStyle == RMC_XY_BUBBLE );
       pt[ 0 ].X = x;            pt[ 0 ].Y = y + h * 0.85f;
       pt[ 1 ].X = x + w * 0.35f; pt[ 1 ].Y = y + h * 0.35f;
       pt[ 2 ].X = x + w * 0.6f;  pt[ 2 ].Y = y + h * 0.65f;
@@ -3784,6 +3787,77 @@ static REAL chc_XYPos( CHC_BOX * pGrid, int iAxis, double dMin, double dMax, dou
    return pGrid->y + pGrid->h - ( REAL ) ( dRel * pGrid->h );
 }
 
+/* chartclass: RMC_XY_BUBBLE, aDataY with pairs Y and size, circle area by size */
+static HB_BOOL chc_IsBubble( CHC_SERIES * pSeries )
+{
+   return pSeries->iKind == CHC_SER_XY && pSeries->iStyle == RMC_XY_BUBBLE;
+}
+
+/* bigger size of all bubble series of region, same scale for all */
+static double chc_BubbleMax( CHC_REGION * pRegion )
+{
+   double dMax = 0;
+   int n, i;
+
+   for( n = 0; n < pRegion->nSeries; n++ )
+   {
+      CHC_SERIES * pSeries = &pRegion->series[ n ];
+      if( chc_IsBubble( pSeries ) && ! pSeries->lHide )
+      {
+         for( i = 1; i < pSeries->nData; i += 2 )
+            dMax = HB_MAX( dMax, fabs( pSeries->pData[ i ] ) );
+      }
+   }
+   return dMax;
+}
+
+/* bigger bubbles first, small ones stay visible; size written inside when label is on and fits */
+static void chc_BubblesDraw( CHC_DC * dc, CHC_REGION * pRegion, int iSeries, CHC_POINTF * pt, int nPts, CHC_BOX * pGrid )
+{
+   CHC_SERIES * pSeries = &pRegion->series[ iSeries ];
+   double dMax = chc_BubbleMax( pRegion );
+   REAL   fMaxR = HB_MIN( pGrid->w, pGrid->h ) * 0.12f;
+   int *  pOrder, i, k;
+
+   if( dMax <= 0 || nPts == 0 )
+      return;
+   pOrder = ( int * ) hb_xgrab( sizeof( int ) * nPts );
+   for( i = 0; i < nPts; i++ )
+   {
+      int t = i;
+      for( k = i; k > 0 && fabs( pSeries->pData[ pOrder[ k - 1 ] * 2 + 1 ] ) < fabs( pSeries->pData[ t * 2 + 1 ] ); k-- )
+         pOrder[ k ] = pOrder[ k - 1 ];
+      pOrder[ k ] = t;
+   }
+   for( k = 0; k < nPts; k++ )
+   {
+      int    p = pOrder[ k ];
+      double dSize = fabs( pSeries->pData[ p * 2 + 1 ] );
+      REAL   r = ( REAL ) ( fMaxR * sqrt( dSize / dMax ) ), tw, th;
+      ARGB   color = chc_PointColor( pRegion, iSeries, p );
+      GpBrush * brush;
+      GpPen * pen;
+      char   szLabel[ 96 ];
+
+      if( r < 2 )
+         r = 2;
+      brush = chc_Solid( chc_Alpha( color, pSeries->lLucent ? 110 : 190 ) );
+      pGdipFillEllipse( dc->g, brush, pt[ p ].X - r, pt[ p ].Y - r, r * 2, r * 2 );
+      pGdipDeleteBrush( brush );
+      pen = chc_Pen( chc_Dark( color, 0.3 ), 1, RMC_LINESTYLESOLID );
+      pGdipDrawEllipse( dc->g, pen, pt[ p ].X - r, pt[ p ].Y - r, r * 2, r * 2 );
+      pGdipDeletePen( pen );
+      chc_ValueText( pSeries, pSeries->pData[ p * 2 + 1 ], 0, chc_Decimals( pSeries->pData[ p * 2 + 1 ] ), "", szLabel, sizeof( szLabel ) );
+      if( *szLabel )
+      {
+         chc_TextSize( dc, szLabel, 7, HB_FALSE, &tw, &th );
+         if( tw + 2 <= r * 2 && th <= r * 2 )
+            chc_TextAngle( dc, szLabel, 7, HB_FALSE, chc_Contrast( color ), pt[ p ].X, pt[ p ].Y, 0 );
+      }
+   }
+   hb_xfree( pOrder );
+}
+
 static void chc_XYDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_BOX * pArea )
 {
    CHC_DAXIS  defAxis[ 4 ], * pAx[ 4 ];
@@ -3821,9 +3895,10 @@ static void chc_XYDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_BOX * pArea )
          HB_BOOL lX = ( k == CHC_XBOTTOM || k == CHC_XTOP );
          double * pValues = lX ? pSeries->pX : pSeries->pData;
          int nValues = lX ? pSeries->nX : pSeries->nData;
+         int iStep = ( ! lX && chc_IsBubble( pSeries ) ) ? 2 : 1;
          if( pSeries->iKind != CHC_SER_XY || pSeries->lHide || chc_XYAxisOf( pSeries, lX ) != k )
             continue;
-         for( i = 0; i < nValues; i++ )
+         for( i = 0; i < nValues; i += iStep )
          {
             if( ! lData[ k ] )
                dLow = dHigh = pValues[ i ];
@@ -3989,7 +4064,7 @@ static void chc_XYDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_BOX * pArea )
    {
       CHC_SERIES * pSeries = &pRegion->series[ n ];
       int  kx = chc_XYAxisOf( pSeries, HB_TRUE ), ky = chc_XYAxisOf( pSeries, HB_FALSE );
-      int  nPts = HB_MIN( pSeries->nX, pSeries->nData ), nDraw;
+      int  nPts = HB_MIN( pSeries->nX, chc_IsBubble( pSeries ) ? pSeries->nData / 2 : pSeries->nData ), nDraw;
       int  iSymbol = pSeries->iSymbol, iStyle;
       HB_BOOL lSpline = ( pSeries->iLineStyle == RMC_LSTYLE_SPLINE || pSeries->iLineStyle == RMC_LSTYLE_SPLINE_AREA );
       HB_BOOL lStair  = ( pSeries->iLineStyle == RMC_LSTYLE_STAIR || pSeries->iLineStyle == RMC_LSTYLE_STAIR_AREA );
@@ -4004,7 +4079,14 @@ static void chc_XYDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_BOX * pArea )
       for( i = 0; i < nPts; i++ )
       {
          pt[ i ].X = chc_XYPos( &grid, kx, dMin[ kx ], dMax[ kx ], pSeries->pX[ i ] );
-         pt[ i ].Y = chc_XYPos( &grid, ky, dMin[ ky ], dMax[ ky ], pSeries->pData[ i ] );
+         pt[ i ].Y = chc_XYPos( &grid, ky, dMin[ ky ], dMax[ ky ], pSeries->pData[ chc_IsBubble( pSeries ) ? i * 2 : i ] );
+      }
+      if( chc_IsBubble( pSeries ) )
+      {
+         chc_BubblesDraw( dc, pRegion, n, pt, nPts, &grid );
+         hb_xfree( pt );
+         hb_xfree( pDraw );
+         continue;
       }
       /* stair: horizontal until next X, then vertical */
       nDraw = 0;
@@ -4641,6 +4723,120 @@ static void chc_CardDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_SERIES * pSerie
    }
 }
 
+/*
+RMC_FUNNEL: one horizontal bar by stage, from top, width by value, centered
+names from legend on labels, value label: default and twin = value (percent of first), percent, absolute
+*/
+static void chc_FunnelDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_SERIES * pSeries, CHC_BOX * pArea )
+{
+   int     n, nData = pSeries->nData, iSeries = ( int ) ( pSeries - pRegion->series ), iVLabel = pSeries->iVLabel;
+   double  dMax = 0, dFirst = fabs( pSeries->pData[ 0 ] );
+   HB_BOOL lOnLabels = pRegion->legend.lSet && ! pRegion->legend.lHide && pRegion->legend.iAlign == RMC_LEGEND_ONVLABELS;
+   REAL    fRow, fGap, fBarH, tw, th;
+
+   for( n = 0; n < nData; n++ )
+      dMax = HB_MAX( dMax, fabs( pSeries->pData[ n ] ) );
+   if( dMax <= 0 )
+      return;
+   if( iVLabel > 10 )
+      iVLabel -= 10;
+   fRow  = ( pArea->h - 8 ) / nData;
+   fGap  = HB_MIN( fRow * 0.15f, 6 );
+   fBarH = fRow - fGap;
+   for( n = 0; n < nData; n++ )
+   {
+      double dValue = fabs( pSeries->pData[ n ] );
+      REAL   fW = ( REAL ) ( ( pArea->w - 16 ) * dValue / dMax ), y = pArea->y + 4 + n * fRow + fGap / 2;
+      REAL   x = pArea->x + ( pArea->w - fW ) / 2;
+      ARGB   color = chc_PointColor( pRegion, iSeries, n );
+      char   szName[ 256 ], szValue[ 64 ], szPct[ 64 ], szText[ 400 ];
+
+      if( pSeries->lLucent )
+         color = chc_Alpha( color, 170 );
+      if( fW >= 1 )
+         chc_FillRect( dc, color, x, y, fW, fBarH );
+      if( pSeries->iHatch == RMC_HATCHBRUSH_ON )
+      {
+         CHC_BOX box;
+         box.x = x; box.y = y; box.w = fW; box.h = fBarH;
+         chc_BarHatch( dc, &box, color, n );
+      }
+
+      *szName = '\0';
+      if( lOnLabels )
+         chc_ListItem( pRegion->legend.szText, n, szName, sizeof( szName ) );
+      chc_ShowValue( pSeries->pData[ n ], szValue, sizeof( szValue ) );
+      chc_FormatValue( dFirst > 0 ? dValue * 100 / dFirst : 0, 1, "", szPct, sizeof( szPct ) );
+      switch( iVLabel )
+      {
+         case RMC_VLABEL_NONE:
+         case RMC_VLABEL_LEGENDONLY: *szValue = '\0'; break;
+         case RMC_VLABEL_PERCENT:    hb_snprintf( szValue, sizeof( szValue ), "%s%%", szPct ); break;
+         case RMC_VLABEL_ABSOLUTE:   break;
+         default:
+         {
+            char szTemp[ 64 ];
+            hb_strncpy( szTemp, szValue, sizeof( szTemp ) - 1 );
+            hb_snprintf( szValue, sizeof( szValue ), "%s (%s%%)", szTemp, szPct );
+         }
+      }
+      hb_snprintf( szText, sizeof( szText ), "%s%s%s", szName, *szName && *szValue ? "  " : "", szValue );
+      if( *szText == '\0' )
+         continue;
+      /* inside the bar, or at right of the bar in dark when it does not fit */
+      chc_TextSize( dc, szText, 8, HB_FALSE, &tw, &th );
+      if( tw + 8 <= fW && th <= fBarH )
+         chc_TextRect( dc, szText, 8, HB_FALSE, chc_Contrast( color ), x, y, fW, fBarH, GP_ALIGNCENTER, GP_ALIGNCENTER );
+      else
+         chc_TextRect( dc, szText, 8, HB_FALSE, 0xFF303030, x + fW + 4, y, tw + 4, fBarH, GP_ALIGNNEAR, GP_ALIGNCENTER );
+   }
+}
+
+/*
+RMC_MULTICARD: several values, each one with the name below and a color mark at left
+names from legend on labels, more columns when the rows do not fit
+*/
+static void chc_MultiCardDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_SERIES * pSeries, CHC_BOX * pArea )
+{
+   int     n, nData = pSeries->nData, iSeries = ( int ) ( pSeries - pRegion->series ), nCols, nRows, iBig = 40;
+   HB_BOOL lOnLabels = pRegion->legend.lSet && ! pRegion->legend.lHide && pRegion->legend.iAlign == RMC_LEGEND_ONVLABELS;
+   REAL    fCellW, fCellH, tw, thName = 0;
+   char    szText[ 96 ], szName[ 256 ];
+
+   chc_TextSize( dc, "Ag", 8, HB_FALSE, &tw, &thName );
+   nRows = ( int ) ( pArea->h / ( thName * 3.2f ) );
+   if( nRows < 1 )
+      nRows = 1;
+   nCols  = ( nData + nRows - 1 ) / nRows;
+   nRows  = ( nData + nCols - 1 ) / nCols;
+   fCellW = pArea->w / nCols;
+   fCellH = pArea->h / nRows;
+   /* same font size for all values, the bigger that fits */
+   for( n = 0; n < nData; n++ )
+   {
+      chc_ShowValue( pSeries->pData[ n ], szText, sizeof( szText ) );
+      iBig = HB_MIN( iBig, chc_FitFont( dc, szText, iBig, 8, HB_TRUE, fCellW - 22, fCellH - thName - 8 ) );
+   }
+   for( n = 0; n < nData; n++ )
+   {
+      REAL x = pArea->x + ( n / nRows ) * fCellW, y = pArea->y + ( n % nRows ) * fCellH, thBig, fTop;
+      ARGB color = chc_PointColor( pRegion, iSeries, n );
+
+      chc_ShowValue( pSeries->pData[ n ], szText, sizeof( szText ) );
+      chc_TextSize( dc, szText, iBig, HB_TRUE, &tw, &thBig );
+      *szName = '\0';
+      if( lOnLabels )
+         chc_ListItem( pRegion->legend.szText, n, szName, sizeof( szName ) );
+      fTop = y + ( fCellH - thBig - ( *szName ? thName : 0 ) ) / 2;
+      chc_FillRect( dc, color, x + 6, fTop + 2, 4, thBig + ( *szName ? thName : 0 ) - 4 );
+      chc_TextRect( dc, szText, iBig, HB_TRUE, 0xFF252525, x + 16, fTop, fCellW - 18, thBig, GP_ALIGNNEAR, GP_ALIGNCENTER );
+      if( *szName )
+         chc_TextRect( dc, szName, 8, HB_FALSE, 0xFF606060, x + 16, fTop + thBig, fCellW - 18, thName, GP_ALIGNNEAR, GP_ALIGNCENTER );
+      if( n % nRows > 0 )
+         chc_Line( dc, 0xFFE0E0E0, RMC_LINESTYLESOLID, x + 6, y, x + fCellW - 6, y );
+   }
+}
+
 static void chc_GridlessDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_SERIES * pSeries, int iSeries, CHC_BOX * pArea )
 {
    CHC_SLICE * pSlices;
@@ -4665,6 +4861,8 @@ static void chc_GridlessDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_SERIES * pS
       case RMC_GAUGE:   chc_GaugeDraw( dc, pRegion, pSeries, pArea ); return;
       case RMC_TREEMAP: chc_TreemapDraw( dc, pRegion, pSeries, pArea ); return;
       case RMC_KPICARD: chc_CardDraw( dc, pRegion, pSeries, pArea ); return;
+      case RMC_FUNNEL:  chc_FunnelDraw( dc, pRegion, pSeries, pArea ); return;
+      case RMC_MULTICARD: chc_MultiCardDraw( dc, pRegion, pSeries, pArea ); return;
    }
    for( n = 0; n < nData; n++ )
    {

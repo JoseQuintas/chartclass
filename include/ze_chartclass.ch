@@ -309,6 +309,8 @@ ze_chartclass.ch - constants for chartclass, same names and values of the RMC_* 
 #define RMC_GAUGE                        63   /* chartclass: half circle, { value } or { value, limit1, ..., max } */
 #define RMC_TREEMAP                      64   /* chartclass: one rectangle by value, area by value */
 #define RMC_KPICARD                      65   /* chartclass: big value, { value } or { value, previous } */
+#define RMC_FUNNEL                       80   /* chartclass: horizontal bars by stage, centered */
+#define RMC_MULTICARD                    81   /* chartclass: several values with names */
 
 /* PieDonutAlignment */
 #define RMC_FULL                         1
@@ -324,6 +326,7 @@ ze_chartclass.ch - constants for chartclass, same names and values of the RMC_* 
 #define RMC_XY_LINE_DASHDOT              67
 #define RMC_XY_LINE_DASHDOTDOT           66
 #define RMC_XY_SYMBOL                    71
+#define RMC_XY_BUBBLE                    72   /* chartclass: aDataY with pairs { y, size }, circle area by size */
 #define RMC_XY_CABLE                     73
 
 /* Hatchmodes */

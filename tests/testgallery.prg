@@ -1,6 +1,6 @@
 /*
 TESTGALLERY - all samples to PNG files on ../images, used on README gallery
-samples.prg (1 to 10), moresamples.prg (11 to 18) and rmcsamples.prg (23)
+samples.prg (1 to 10), moresamples.prg (11 to 19) and rmcsamples.prg (23)
 run from tests folder, samples use seasky.jpg
 
 hbmk2 testgallery.hbp
@@ -26,7 +26,7 @@ PROCEDURE Main()
       ? "sample", nCont
    NEXT
 
-   aList := { @Graphic11(), @Graphic12(), @Graphic13(), @Graphic14(), @Graphic15(), @Graphic16(), @Graphic17(), @Graphic18() }
+   aList := { @Graphic11(), @Graphic12(), @Graphic13(), @Graphic14(), @Graphic15(), @Graphic16(), @Graphic17(), @Graphic18(), @Graphic19() }
    FOR nCont = 1 TO Len( aList )
       oChart:SetWatermark( "", 0, 0, 0, 0 ) // watermark is global, only sample 9 has one
       aList[ nCont ]:Exec( 0, IMAGE_WIDTH, IMAGE_HEIGHT, cPath + "sample_" + StrZero( nCont + 10, 2 ) + ".png" )

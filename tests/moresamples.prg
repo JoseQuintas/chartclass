@@ -8,6 +8,7 @@ Graphic15 save to PNG and RMC file
 Graphic16 chart from RMC file (created on Graphic15)
 Graphic17 KPI cards and gauges
 Graphic18 waterfall and treemap
+Graphic19 funnel, multi-row card and bubbles
 */
 
 #include "ze_chartclass.ch"
@@ -255,6 +256,51 @@ FUNCTION Graphic18( hWnd, nWidth, nHeight, cFile )
    oChart:AddCaption( nChartId, 2, "Treemap", RMC_COLOR_TRANSPARENT, RMC_COLOR_DIM_GRAY, 10, .T. )
    oChart:AddLegend( nChartId, 2, cNames, RMC_LEGEND_ONVLABELS, 0, 0, 0, 0, 0 )
    oChart:AddGridlessSeries( nChartId, 2, aShare, Len( aShare ), 0, 0, RMC_TREEMAP, 0, 0, .F., RMC_VLABEL_TWIN, RMC_HATCHBRUSH_OFF, 0 )
+
+   oChart:Draw( nChartId )
+   IF HB_ISSTRING( cFile )
+      oChart:Draw2File( nChartId, cFile, 0, 0, 0 )
+   ENDIF
+   oChart:Reset( nChartId )
+
+   RETURN NIL
+
+FUNCTION Graphic19( hWnd, nWidth, nHeight, cFile )
+
+   // funnel, multi-row card and bubbles
+   LOCAL nChartId, oChart := ChartClass():New()
+   LOCAL nW := Int( ( nWidth - 15 ) / 2 ), nH := Int( nHeight * 0.45 )
+   // bubbles: aDataY with pairs { y, size }
+   LOCAL aX1 := { 20, 35, 50, 70, 85 }
+   LOCAL aY1 := { 30, 120, 55, 300, 40, 180, 75, 420, 60, 90 }
+   LOCAL aX2 := { 15, 40, 60, 80 }
+   LOCAL aY2 := { 70, 80, 85, 200, 25, 60, 45, 150 }
+
+   nChartId := oChart:GetChartId()
+
+   oChart:CreateChart( hWnd, nChartId, 0, 0, nWidth, nHeight, RMC_COLOR_WHITE, RMC_CTRLSTYLEFLAT, .F., "", "Tahoma", 0, RMC_COLOR_DEFAULT )
+
+   // RMC_FUNNEL: stages from top, names from legend on labels, value (percent of first)
+   oChart:AddRegion( nChartId, 5, 5, nW, nH, "", .T. )
+   oChart:AddCaption( nChartId, 1, "Funnel", RMC_COLOR_TRANSPARENT, RMC_COLOR_DIM_GRAY, 10, .T. )
+   oChart:AddLegend( nChartId, 1, "Visits*Quotes*Orders*Invoiced*Paid", RMC_LEGEND_ONVLABELS, 0, 0, 0, 0, 0 )
+   oChart:AddGridlessSeries( nChartId, 1, { 1200, 640, 410, 380, 350 }, 5, 0, 0, RMC_FUNNEL, 0, 0, .F., RMC_VLABEL_DEFAULT, RMC_HATCHBRUSH_OFF, 0 )
+
+   // RMC_MULTICARD: several values with names
+   oChart:AddRegion( nChartId, 10 + nW, 5, -5, nH, "", .T. )
+   oChart:AddCaption( nChartId, 2, "Multi-row card", RMC_COLOR_TRANSPARENT, RMC_COLOR_DIM_GRAY, 10, .T. )
+   oChart:AddLegend( nChartId, 2, "Sales*Orders*Customers*Average ticket", RMC_LEGEND_ONVLABELS, 0, 0, 0, 0, 0 )
+   oChart:AddGridlessSeries( nChartId, 2, { 1284350.75, 342, 118, 3755.41 }, 4, 0, 0, RMC_MULTICARD, 0, 0, .F., RMC_VLABEL_DEFAULT, RMC_HATCHBRUSH_OFF, 0 )
+
+   // RMC_XY_BUBBLE: X, Y and size
+   oChart:AddRegion( nChartId, 5, nH + 10, -5, -5, "", .T. )
+   oChart:AddCaption( nChartId, 3, "Bubbles", RMC_COLOR_TRANSPARENT, RMC_COLOR_DIM_GRAY, 10, .T. )
+   oChart:AddGrid( nChartId, 3, RMC_COLOR_WHITE, .F., 0, 0, 0, 0, RMC_BICOLOR_NONE )
+   oChart:AddXAxis( nChartId, 3, RMC_XAXISBOTTOM, 0, 100, 11, 8, RMC_COLOR_BLACK, RMC_COLOR_LIGHT_GRAY, RMC_LINESTYLEDOT, 0, "", "Margin %", "", RMC_TEXTCENTER )
+   oChart:AddYAxis( nChartId, 3, RMC_YAXISLEFT, 0, 100, 6, 8, RMC_COLOR_BLACK, RMC_COLOR_LIGHT_GRAY, RMC_LINESTYLEDOT, 0, "", "Growth %", "", RMC_TEXTCENTER )
+   oChart:AddLegend( nChartId, 3, "Products*Services", RMC_LEGEND_TOP, RMC_COLOR_DEFAULT, RMC_LEGENDNORECT, RMC_COLOR_DEFAULT, 8, .F. )
+   oChart:AddXYSeries( nChartId, 3, aX1, Len( aX1 ), aY1, Len( aY1 ), RMC_COLOR_CORN_FLOWER_BLUE, RMC_XY_BUBBLE, 0, 0, RMC_XAXISBOTTOM, RMC_YAXISLEFT, RMC_VLABEL_DEFAULT )
+   oChart:AddXYSeries( nChartId, 3, aX2, Len( aX2 ), aY2, Len( aY2 ), RMC_COLOR_CRIMSON, RMC_XY_BUBBLE, 0, 0, RMC_XAXISBOTTOM, RMC_YAXISLEFT, RMC_VLABEL_DEFAULT )
 
    oChart:Draw( nChartId )
    IF HB_ISSTRING( cFile )
