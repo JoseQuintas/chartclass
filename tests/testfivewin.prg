@@ -14,7 +14,25 @@ FUNCTION MAIN()
 
    @ 0,0 FOLDEREX oFld PROMPT "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P" SIZE 900, 700 OF oDlg PIXEL
 
-   ACTIVATE DIALOG oDlg CENTER ON INIT ( (Self), DrawAll( oFld ) )
+   ACTIVATE DIALOG oDlg CENTER ON INIT ( (Self), DrawAll( oFld ), SetClick( oDlg ) )
+
+   RETURN NIL
+
+/* click on any chart shows on title what was clicked */
+STATIC FUNCTION SetClick( oDlg )
+
+   LOCAL nChartId
+
+   FOR nChartId := 1 TO 40
+      CHC_SetOnClick( nChartId, { | hInfo | oDlg:SetText( "FiveWin - chartclass - " + ;
+         hInfo[ "TYPE" ] + ;
+         " region " + Ltrim( Str( hInfo[ "REGION" ] ) ) + ;
+         " series " + Ltrim( Str( hInfo[ "SERIES" ] ) ) + ;
+         " point " + Ltrim( Str( hInfo[ "POINT" ] ) ) + ;
+         iif( hInfo[ "ITEM" ] > 0, " item " + Ltrim( Str( hInfo[ "ITEM" ] ) ), "" ) + ;
+         " " + hInfo[ "LABEL" ] + " " + hInfo[ "SERIESNAME" ] + ;
+         " value " + Ltrim( Str( hInfo[ "VALUE" ] ) ) ) } )
+   NEXT
 
    RETURN NIL
 

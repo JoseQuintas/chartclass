@@ -194,6 +194,8 @@ CREATE CLASS ChartClass
    METHOD Zoom( ... )                      INLINE RMC_ZOOM( ... )
    METHOD SetNumberFormat( ... )           INLINE CHC_SETNUMBERFORMAT( ... ) // cDecimal, cThousand, cSuffix
    METHOD ClipParent( ... )                INLINE CHC_CLIPPARENT( ... ) // hWnd, only for console GT
+   METHOD SetOnClick( ... )                INLINE CHC_SETONCLICK( ... ) // nCtrlId, bClick( hInfo )
+   METHOD HitTest( ... )                   INLINE CHC_HITTEST( ... ) // nCtrlId, nX, nY -> hInfo
    METHOD ToDecimal( xValue )              INLINE xValue + 1.01 - 1.01
    METHOD ToDouble( xValue )               INLINE xValue // arrays are accepted direct
    METHOD ToLong( xValue )                 INLINE xValue // arrays are accepted direct

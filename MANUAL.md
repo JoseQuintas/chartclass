@@ -10,8 +10,9 @@ Contents
 3. Series: bar, line/area, pie/donut/pyramid, XY, high-low, volume
 4. Custom objects: text and line
 5. Output: window, file, clipboard, printer
-6. `.rmc` files
-7. Constants and errors
+6. Mouse click
+7. `.rmc` files
+8. Constants and errors
 
 ---
 
@@ -239,7 +240,43 @@ RMC_Reset( nCtrlId )                                             // remove regio
 - `RMC_SetWatermark( cText, nColor, nLucent, nAlignment, nFontSize )`: text behind all charts.
 - Console GT (GTWVT/GTWVG): call `CHC_ClipParent( hWnd )` so the console does not paint over the chart.
 
-## 6. `.rmc` files
+## 6. Mouse click
+
+```
+CHC_SetOnClick( nCtrlId, bClick )        // bClick( hInfo ), NIL removes; call after RMC_CreateChart()
+CHC_HitTest( nCtrlId, nX, nY ) --> hInfo // what is on the point, pixels from top left of the chart
+```
+
+```
+oChart:SetOnClick( nChartId, { | hInfo | ;
+   iif( hInfo[ "TYPE" ] == "BAR", MsgInfo( hInfo[ "LABEL" ] + ": " + Str( hInfo[ "VALUE" ] ) ), NIL ) } )
+```
+
+- Works the same on any GUI library: the chart has its own window and receives the mouse.
+  Without `CHC_SetOnClick()` nothing changes.
+- The codeblock is called on left click, double click and right click, `hInfo[ "EVENT" ]` is
+  `RMC_LBUTTONDOWN`, `RMC_LBUTTONDBLCLK` or `RMC_RBUTTONDOWN`.
+- The cursor is a hand over what can be clicked.
+- The areas are saved by `RMC_Draw()`, nothing is calculated when the mouse moves.
+  `RMC_Reset()` after `RMC_Draw()` keeps the image and the click.
+- `CHC_HitTest()` is for charts without their own window (`RMC_CreateChartOnDC()`, export only):
+  the program gives the point.
+
+`hInfo` is a Harbour hash, positions are 1 based, 0 = none:
+
+| Key | Content |
+|---|---|
+| `TYPE` | `BAR`, `LINE`, `XY`, `BUBBLE`, `HIGHLOW`, `VOLUME`, `PIE`, `PYRAMID`, `GAUGE`, `TREEMAP`, `CARD`, `FUNNEL`, `MULTICARD`, `LEGEND`, `REGION` (region without data on the point), `""` (outside regions) |
+| `REGION`, `SERIES`, `POINT` | region, series on the region and point on the series |
+| `ITEM` | legend item, when `TYPE` is `LEGEND` |
+| `VALUE` | value of the point (high-low: close, bubble: size) |
+| `LABEL` | label of the point: label axis on bar and line charts, legend on pie and other gridless charts |
+| `SERIESNAME` | legend of the series on bar, line and XY charts |
+| `X`, `Y`, `EVENT`, `CHART` | point clicked, mouse event and nCtrlId |
+
+Line and XY points are found by a small circle around the point, areas of area charts are not.
+
+## 7. `.rmc` files
 
 Charts made with the RMChart designer (`rmcdesigner.exe`) are saved as `.rmc` files.
 
@@ -255,7 +292,7 @@ RMC_File2Source( cRMCFile, [bText], [bData] ) --> cSource
   `bText` and `bData` can change texts and data while writing the source.
 - Read: chart, regions, caption, grid, axes, legend, all series, custom text and line.
 
-## 7. Constants and errors
+## 8. Constants and errors
 
 All constants are in `include/ze_chartclass.ch`.
 

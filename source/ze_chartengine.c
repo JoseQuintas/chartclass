@@ -625,6 +625,45 @@ typedef struct
    int         iEndCap;
 } CHC_COBJ;
 
+/* clickable areas, saved when the chart is drawn on the window, for CHC_HitTest() and CHC_SetOnClick() */
+#define CHC_HT_REGION     1
+#define CHC_HT_BAR        2
+#define CHC_HT_LINE       3
+#define CHC_HT_XY         4
+#define CHC_HT_BUBBLE     5
+#define CHC_HT_HIGHLOW    6
+#define CHC_HT_VOLUME     7
+#define CHC_HT_PIE        8
+#define CHC_HT_PYRAMID    9
+#define CHC_HT_GAUGE      10
+#define CHC_HT_TREEMAP    11
+#define CHC_HT_CARD       12
+#define CHC_HT_FUNNEL     13
+#define CHC_HT_MULTICARD  14
+#define CHC_HT_LEGEND     15
+
+#define CHC_HS_RECT       1
+#define CHC_HS_ELLIPSE    2
+#define CHC_HS_SLICE      3
+#define CHC_HS_POLY       4
+
+typedef struct
+{
+   int         iType;
+   int         iShape;
+   int         iRegion;          /* 0 based, -1 none */
+   int         iSeries;
+   int         iPoint;
+   double      dValue;
+   REAL        x, y, w, h;       /* rect, ellipse, or ellipse of the slice */
+   REAL        fInner;           /* slice, inner ellipse / outer ellipse, donut */
+   double      dStart, dSweep;   /* slice, degrees as GDI+ */
+   CHC_POINTF  pt[ 4 ];          /* poly */
+   int         nPt;
+   char        szLabel[ 128 ];   /* names saved, RMC_Reset() after RMC_Draw() keeps the image and the click */
+   char        szSeries[ 128 ];
+} CHC_HIT;
+
 typedef struct
 {
    int         iId;
@@ -646,6 +685,11 @@ typedef struct
    HBITMAP     hOldBitmap;
    int         bmpW, bmpH;
    CHC_COBJ *  pCObj;           /* RMC_CO*(), CHC_MAXCOBJ items */
+   CHC_HIT *   pHit;            /* clickable areas of last draw on window */
+   int         nHit;
+   int         nHitMax;
+   HB_BOOL     lHitOn;          /* saving areas, only when drawing to the window bitmap */
+   PHB_ITEM    pOnClick;        /* CHC_SetOnClick() codeblock */
 } CHC_CHART;
 
 typedef struct
@@ -1572,6 +1616,17 @@ static void chc_ChartDelete( CHC_CHART * pChart )
    int n;
 
    chc_ChartReset( pChart );
+   if( pChart->pHit )
+   {
+      hb_xfree( pChart->pHit );
+      pChart->pHit = NULL;
+   }
+   pChart->nHitMax = 0;
+   if( pChart->pOnClick )
+   {
+      hb_itemRelease( pChart->pOnClick );
+      pChart->pOnClick = NULL;
+   }
    if( pChart->hWnd && IsWindow( pChart->hWnd ) )
    {
       SetWindowLongPtrW( pChart->hWnd, GWLP_USERDATA, 0 );
@@ -1591,6 +1646,238 @@ static void chc_ChartDelete( CHC_CHART * pChart )
          s_charts[ n ] = NULL;
    }
    hb_xfree( pChart );
+}
+
+/* ---------------------------------------------------------------- clickable areas */
+
+/* new area, only while drawing on the window bitmap, NULL otherwise */
+static CHC_HIT * chc_HitNew( CHC_DC * dc, int iType, int iShape, CHC_REGION * pRegion, int iSeries, int iPoint, double dValue )
+{
+   CHC_CHART * pChart = dc->pChart;
+   CHC_HIT * pHit;
+
+   if( ! pChart->lHitOn )
+      return NULL;
+   if( pChart->nHit >= pChart->nHitMax )
+   {
+      pChart->nHitMax = pChart->nHitMax ? pChart->nHitMax * 2 : 64;
+      pChart->pHit = ( CHC_HIT * ) ( pChart->pHit ? hb_xrealloc( pChart->pHit, sizeof( CHC_HIT ) * pChart->nHitMax ) :
+                                                    hb_xgrab( sizeof( CHC_HIT ) * pChart->nHitMax ) );
+   }
+   pHit = &pChart->pHit[ pChart->nHit++ ];
+   memset( pHit, 0, sizeof( CHC_HIT ) );
+   pHit->iType   = iType;
+   pHit->iShape  = iShape;
+   pHit->iRegion = pRegion ? ( int ) ( pRegion - pChart->region ) : -1;
+   pHit->iSeries = iSeries;
+   pHit->iPoint  = iPoint;
+   pHit->dValue  = dValue;
+   if( pRegion )
+   {
+      switch( iType )
+      {
+         case CHC_HT_BAR:
+         case CHC_HT_LINE:
+         case CHC_HT_HIGHLOW:
+         case CHC_HT_VOLUME:
+            chc_ListItem( pRegion->laxis.szLabels, iPoint, pHit->szLabel, sizeof( pHit->szLabel ) );
+            chc_ListItem( pRegion->legend.szText, iSeries, pHit->szSeries, sizeof( pHit->szSeries ) );
+            break;
+         case CHC_HT_XY:
+         case CHC_HT_BUBBLE:
+            chc_ListItem( pRegion->legend.szText, iSeries, pHit->szSeries, sizeof( pHit->szSeries ) );
+            break;
+         case CHC_HT_REGION:
+            break;
+         default:
+            /* gridless and legend: one name by point */
+            chc_ListItem( pRegion->legend.szText, iPoint, pHit->szLabel, sizeof( pHit->szLabel ) );
+      }
+   }
+   return pHit;
+}
+
+static void chc_HitRect( CHC_DC * dc, int iType, CHC_REGION * pRegion, int iSeries, int iPoint, double dValue, REAL x, REAL y, REAL w, REAL h )
+{
+   CHC_HIT * pHit = chc_HitNew( dc, iType, CHC_HS_RECT, pRegion, iSeries, iPoint, dValue );
+
+   if( pHit )
+   {
+      pHit->x = w < 0 ? x + w : x;
+      pHit->y = h < 0 ? y + h : y;
+      pHit->w = ( REAL ) fabs( w );
+      pHit->h = ( REAL ) fabs( h );
+   }
+}
+
+static void chc_HitCircle( CHC_DC * dc, int iType, CHC_REGION * pRegion, int iSeries, int iPoint, double dValue, REAL cx, REAL cy, REAL r )
+{
+   CHC_HIT * pHit = chc_HitNew( dc, iType, CHC_HS_ELLIPSE, pRegion, iSeries, iPoint, dValue );
+
+   if( pHit )
+   {
+      pHit->x = cx - r;
+      pHit->y = cy - r;
+      pHit->w = r * 2;
+      pHit->h = r * 2;
+   }
+}
+
+static void chc_HitSlice( CHC_DC * dc, int iType, CHC_REGION * pRegion, int iSeries, int iPoint, double dValue,
+   REAL x, REAL y, REAL w, REAL h, REAL fInner, double dStart, double dSweep )
+{
+   CHC_HIT * pHit = chc_HitNew( dc, iType, CHC_HS_SLICE, pRegion, iSeries, iPoint, dValue );
+
+   if( pHit )
+   {
+      pHit->x = x;
+      pHit->y = y;
+      pHit->w = w;
+      pHit->h = h;
+      pHit->fInner = fInner;
+      pHit->dStart = dStart;
+      pHit->dSweep = dSweep;
+   }
+}
+
+static void chc_HitPoly( CHC_DC * dc, int iType, CHC_REGION * pRegion, int iSeries, int iPoint, double dValue, const CHC_POINTF * pt, int nPt )
+{
+   CHC_HIT * pHit = chc_HitNew( dc, iType, CHC_HS_POLY, pRegion, iSeries, iPoint, dValue );
+
+   if( pHit )
+   {
+      pHit->nPt = HB_MIN( nPt, 4 );
+      memcpy( pHit->pt, pt, sizeof( CHC_POINTF ) * pHit->nPt );
+   }
+}
+
+static HB_BOOL chc_HitInside( CHC_HIT * pHit, REAL px, REAL py )
+{
+   switch( pHit->iShape )
+   {
+      case CHC_HS_RECT:
+         return px >= pHit->x && px <= pHit->x + pHit->w && py >= pHit->y && py <= pHit->y + pHit->h;
+      case CHC_HS_ELLIPSE:
+      case CHC_HS_SLICE:
+      {
+         double rx = pHit->w / 2, ry = pHit->h / 2, dx, dy, e, a;
+         if( rx <= 0 || ry <= 0 )
+            return HB_FALSE;
+         dx = px - ( pHit->x + rx );
+         dy = py - ( pHit->y + ry );
+         e  = ( dx / rx ) * ( dx / rx ) + ( dy / ry ) * ( dy / ry );
+         if( e > 1 )
+            return HB_FALSE;
+         if( pHit->iShape == CHC_HS_ELLIPSE )
+            return HB_TRUE;
+         if( pHit->fInner > 0 && e < pHit->fInner * pHit->fInner )
+            return HB_FALSE;
+         /* degrees clockwise from x axis, y is down as GDI+ */
+         a = atan2( dy, dx ) * 180 / 3.14159265358979 - pHit->dStart;
+         a = fmod( a, 360 );
+         if( a < 0 )
+            a += 360;
+         return a <= pHit->dSweep;
+      }
+      case CHC_HS_POLY:
+      {
+         HB_BOOL lIn = HB_FALSE;
+         int i, j;
+         for( i = 0, j = pHit->nPt - 1; i < pHit->nPt; j = i++ )
+         {
+            if( ( ( pHit->pt[ i ].Y > py ) != ( pHit->pt[ j ].Y > py ) ) &&
+                ( px < ( pHit->pt[ j ].X - pHit->pt[ i ].X ) * ( py - pHit->pt[ i ].Y ) / ( pHit->pt[ j ].Y - pHit->pt[ i ].Y ) + pHit->pt[ i ].X ) )
+               lIn = ! lIn;
+         }
+         return lIn;
+      }
+   }
+   return HB_FALSE;
+}
+
+/* last drawn is on top, region only when nothing else */
+static CHC_HIT * chc_HitFind( CHC_CHART * pChart, int x, int y )
+{
+   CHC_HIT * pRegionHit = NULL;
+   int n;
+
+   for( n = pChart->nHit - 1; n >= 0; n-- )
+   {
+      CHC_HIT * pHit = &pChart->pHit[ n ];
+      if( chc_HitInside( pHit, ( REAL ) x, ( REAL ) y ) )
+      {
+         if( pHit->iType != CHC_HT_REGION )
+            return pHit;
+         if( pRegionHit == NULL )
+            pRegionHit = pHit;
+      }
+   }
+   return pRegionHit;
+}
+
+static void chc_HashPutC( PHB_ITEM pHash, const char * szKey, const char * szValue )
+{
+   PHB_ITEM pKey = hb_itemPutC( NULL, szKey ), pValue = hb_itemPutC( NULL, szValue );
+
+   hb_hashAdd( pHash, pKey, pValue );
+   hb_itemRelease( pKey );
+   hb_itemRelease( pValue );
+}
+
+static void chc_HashPutNI( PHB_ITEM pHash, const char * szKey, int iValue )
+{
+   PHB_ITEM pKey = hb_itemPutC( NULL, szKey ), pValue = hb_itemPutNI( NULL, iValue );
+
+   hb_hashAdd( pHash, pKey, pValue );
+   hb_itemRelease( pKey );
+   hb_itemRelease( pValue );
+}
+
+static void chc_HashPutND( PHB_ITEM pHash, const char * szKey, double dValue )
+{
+   PHB_ITEM pKey = hb_itemPutC( NULL, szKey ), pValue = hb_itemPutND( NULL, dValue );
+
+   hb_hashAdd( pHash, pKey, pValue );
+   hb_itemRelease( pKey );
+   hb_itemRelease( pValue );
+}
+
+/* hash with what is on x, y: TYPE, REGION, SERIES, POINT, ITEM, VALUE, LABEL, SERIESNAME, X, Y, EVENT, CHART */
+static PHB_ITEM chc_HitInfo( CHC_CHART * pChart, int x, int y, int iEvent )
+{
+   static const char * s_szType[] = { "", "REGION", "BAR", "LINE", "XY", "BUBBLE", "HIGHLOW", "VOLUME", "PIE",
+                                      "PYRAMID", "GAUGE", "TREEMAP", "CARD", "FUNNEL", "MULTICARD", "LEGEND" };
+   PHB_ITEM pHash = hb_hashNew( NULL );
+   CHC_HIT * pHit = chc_HitFind( pChart, x, y );
+   int iType = 0, iRegion = 0, iSeries = 0, iPoint = 0, iItem = 0;
+   double dValue = 0;
+
+   if( pHit )
+   {
+      iType   = pHit->iType;
+      iRegion = pHit->iRegion + 1;
+      dValue  = pHit->dValue;
+      if( iType == CHC_HT_LEGEND )
+         iItem = pHit->iPoint + 1;
+      else if( iType != CHC_HT_REGION )
+      {
+         iSeries = pHit->iSeries + 1;
+         iPoint  = pHit->iPoint + 1;
+      }
+   }
+   chc_HashPutC(  pHash, "TYPE",       s_szType[ iType >= 0 && iType <= CHC_HT_LEGEND ? iType : 0 ] );
+   chc_HashPutNI( pHash, "REGION",     iRegion );
+   chc_HashPutNI( pHash, "SERIES",     iSeries );
+   chc_HashPutNI( pHash, "POINT",      iPoint );
+   chc_HashPutNI( pHash, "ITEM",       iItem );
+   chc_HashPutND( pHash, "VALUE",      dValue );
+   chc_HashPutC(  pHash, "LABEL",      pHit ? pHit->szLabel : "" );
+   chc_HashPutC(  pHash, "SERIESNAME", pHit ? pHit->szSeries : "" );
+   chc_HashPutNI( pHash, "X",          x );
+   chc_HashPutNI( pHash, "Y",          y );
+   chc_HashPutNI( pHash, "EVENT",      iEvent );
+   chc_HashPutNI( pHash, "CHART",      pChart->iId );
+   return pHash;
 }
 
 /* ---------------------------------------------------------------- control window */
@@ -1622,6 +1909,38 @@ static LRESULT CALLBACK chc_WndProc( HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM
          EndPaint( hWnd, &ps );
          return 0;
       }
+      case WM_SETCURSOR:
+         /* hand over what can be clicked, only with CHC_SetOnClick() */
+         if( pChart && pChart->pOnClick && LOWORD( lParam ) == HTCLIENT )
+         {
+            POINT pt;
+            CHC_HIT * pHit;
+            GetCursorPos( &pt );
+            ScreenToClient( hWnd, &pt );
+            pHit = chc_HitFind( pChart, pt.x, pt.y );
+            if( pHit && pHit->iType != CHC_HT_REGION )
+            {
+               SetCursor( LoadCursor( NULL, IDC_HAND ) );
+               return TRUE;
+            }
+         }
+         break;
+      case WM_LBUTTONDOWN:
+      case WM_LBUTTONDBLCLK:
+      case WM_RBUTTONDOWN:
+         /* event as RMC_LBUTTONDOWN, RMC_LBUTTONDBLCLK, RMC_RBUTTONDOWN */
+         if( pChart && pChart->pOnClick && hb_vmRequestReenter() )
+         {
+            PHB_ITEM pBlock = hb_itemNew( pChart->pOnClick );
+            PHB_ITEM pInfo = chc_HitInfo( pChart, ( short ) LOWORD( lParam ), ( short ) HIWORD( lParam ), ( int ) uMsg );
+            /* codeblock can delete the chart, pChart is not used after it */
+            hb_evalBlock1( pBlock, pInfo );
+            hb_itemRelease( pInfo );
+            hb_itemRelease( pBlock );
+            hb_vmRequestRestore();
+            return 0;
+         }
+         break;
    }
    return DefWindowProcW( hWnd, uMsg, wParam, lParam );
 }
@@ -1633,7 +1952,7 @@ static HB_BOOL chc_RegisterClass( void )
    if( s_lClassOk )
       return HB_TRUE;
    memset( &wc, 0, sizeof( wc ) );
-   wc.style         = CS_HREDRAW | CS_VREDRAW;
+   wc.style         = CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS;
    wc.lpfnWndProc   = chc_WndProc;
    wc.hInstance     = GetModuleHandleW( NULL );
    wc.hCursor       = LoadCursor( NULL, IDC_ARROW );
@@ -2017,6 +2336,7 @@ static void chc_LegendDraw( CHC_DC * dc, CHC_REGION * pRegion, HB_BOOL lHorizont
       }
       chc_LegendSymbol( dc, pRegion, n, color, cx, cy + ( th - fSwH ) / 2, fSwatch, fSwH );
       chc_TextRect( dc, szItem, pLegend->iFontSize, pLegend->lBold, fg, cx + fSwatch + 4, cy, tw + 2, th, GP_ALIGNNEAR, GP_ALIGNCENTER );
+      chc_HitRect( dc, CHC_HT_LEGEND, pRegion, -1, n, 0, cx, cy, fSwatch + 4 + tw + 2, th );
       if( lHorizontal )
          cx += fItem;
       else
@@ -2479,6 +2799,13 @@ static void chc_BarsDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_GRIDINFO * pInf
          chc_BarDraw( dc, &bar, color, pSeries->iStyle, ! pInfo->lVertical );
          if( pSeries->iHatch == RMC_HATCHBRUSH_ON )
             chc_BarHatch( dc, &bar, color, n );
+         /* small bar still can be clicked */
+         if( pInfo->lVertical )
+            chc_HitRect( dc, CHC_HT_BAR, pRegion, n, i, lFloat || lFall ? dValue : pSeries->pData[ i ],
+               bar.x, bar.h < 4 ? bar.y - ( 4 - bar.h ) / 2 : bar.y, bar.w, HB_MAX( bar.h, 4 ) );
+         else
+            chc_HitRect( dc, CHC_HT_BAR, pRegion, n, i, lFloat || lFall ? dValue : pSeries->pData[ i ],
+               bar.w < 4 ? bar.x - ( 4 - bar.w ) / 2 : bar.x, bar.y, HB_MAX( bar.w, 4 ), bar.h );
          if( lFall && i + 1 < chc_SeriesPoints( pSeries ) && i + 1 < pInfo->nCat )
          {
             /* dotted line from the end of this bar to the next one */
@@ -3052,6 +3379,7 @@ static void chc_LinesDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_GRIDINFO * pIn
 
             if( iSymbol != RMC_SYMBOL_NONE )
                r = chc_Symbol( dc, iSymbol, pTop[ i ].X, pTop[ i ].Y, chc_Alpha( chc_PointColor( pRegion, n, i ), ( int ) ( color >> 24 ) ) );
+            chc_HitCircle( dc, CHC_HT_LINE, pRegion, n, i, chc_SeriesValue( pSeries, i ), pTop[ i ].X, pTop[ i ].Y, HB_MAX( r, 6 ) );
             chc_ValueText( pSeries, chc_SeriesValue( pSeries, i ), dSum, nDecimals, "", szLabel, sizeof( szLabel ) );
             if( *szLabel )
             {
@@ -3116,6 +3444,10 @@ static void chc_StockDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_GRIDINFO * pIn
             GpPen * pen = chc_Pen( chc_PointColor( pRegion, n, i ), 2, RMC_LINESTYLESOLID );
             pGdipDrawLine( dc->g, pen, p1.X, p1.Y, p2.X, p2.Y );
             pGdipDeletePen( pen );
+            if( pInfo->lVertical )
+               chc_HitRect( dc, CHC_HT_VOLUME, pRegion, n, i, pSeries->pData[ i ], p1.X - fHalf, HB_MIN( p1.Y, p2.Y ) - 2, fHalf * 2, ( REAL ) fabs( p2.Y - p1.Y ) + 4 );
+            else
+               chc_HitRect( dc, CHC_HT_VOLUME, pRegion, n, i, pSeries->pData[ i ], HB_MIN( p1.X, p2.X ) - 2, p1.Y - fHalf, ( REAL ) fabs( p2.X - p1.X ) + 4, fHalf * 2 );
          }
          else
          {
@@ -3129,6 +3461,12 @@ static void chc_StockDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_GRIDINFO * pIn
             CHC_POINTF pC = chc_LinePoint( pInfo, iAxis, dClose, pPos[ i ] );
             ARGB   color = pSeries->pData[ i * 4 + 3 ] >= pSeries->pData[ i * 4 ] ? pSeries->colorHigh : pSeries->colorLow;
             GpPen * pen;
+
+            /* value is the close */
+            if( pInfo->lVertical )
+               chc_HitRect( dc, CHC_HT_HIGHLOW, pRegion, n, i, pSeries->pData[ i * 4 + 3 ], pH.X - fHalf, HB_MIN( pH.Y, pL.Y ) - 2, fHalf * 2, ( REAL ) fabs( pL.Y - pH.Y ) + 4 );
+            else
+               chc_HitRect( dc, CHC_HT_HIGHLOW, pRegion, n, i, pSeries->pData[ i * 4 + 3 ], HB_MIN( pH.X, pL.X ) - 2, pH.Y - fHalf, ( REAL ) fabs( pL.X - pH.X ) + 4, fHalf * 2 );
 
             if( pSeries->iStyle == RMC_CANDLESTICK )
             {
@@ -3847,6 +4185,8 @@ static void chc_BubblesDraw( CHC_DC * dc, CHC_REGION * pRegion, int iSeries, CHC
       pen = chc_Pen( chc_Dark( color, 0.3 ), 1, RMC_LINESTYLESOLID );
       pGdipDrawEllipse( dc->g, pen, pt[ p ].X - r, pt[ p ].Y - r, r * 2, r * 2 );
       pGdipDeletePen( pen );
+      /* value is the size, bigger first, so the small on top are found first */
+      chc_HitCircle( dc, CHC_HT_BUBBLE, pRegion, iSeries, p, pSeries->pData[ p * 2 + 1 ], pt[ p ].X, pt[ p ].Y, HB_MAX( r, 4 ) );
       chc_ValueText( pSeries, pSeries->pData[ p * 2 + 1 ], 0, chc_Decimals( pSeries->pData[ p * 2 + 1 ] ), "", szLabel, sizeof( szLabel ) );
       if( *szLabel )
       {
@@ -4136,6 +4476,7 @@ static void chc_XYDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_BOX * pArea )
          REAL r = 0;
          if( iSymbol != RMC_SYMBOL_NONE )
             r = chc_Symbol( dc, iSymbol, pt[ i ].X, pt[ i ].Y, chc_PointColor( pRegion, n, i ) );
+         chc_HitCircle( dc, CHC_HT_XY, pRegion, n, i, pSeries->pData[ i ], pt[ i ].X, pt[ i ].Y, HB_MAX( r, 6 ) );
          chc_ValueText( pSeries, pSeries->pData[ i ], 0, pAx[ ky ]->nDecimals, "", szLabel, sizeof( szLabel ) );
          if( *szLabel )
          {
@@ -4338,6 +4679,7 @@ static void chc_PyramidDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_SERIES * pSe
          pt[ 2 ] = chc_EdgePoint( &base[ iFace + 1 ], &apex, t1 );
          pt[ 3 ] = chc_EdgePoint( &base[ iFace ], &apex, t1 );
          chc_FillPoly( dc, pt, 4, face, face, 1 );
+         chc_HitPoly( dc, CHC_HT_PYRAMID, pRegion, iSeries, n, pSeries->pData[ n ], pt, 4 );
       }
       /* line between layers */
       for( iFace = 0; iFace < nB - 1; iFace++ )
@@ -4515,6 +4857,8 @@ static void chc_GaugeDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_SERIES * pSeri
    chc_TextRect( dc, szText, iBig, HB_TRUE, 0xFF303030, pArea->x, cy + th8 + 4, pArea->w, thBig, GP_ALIGNCENTER, GP_ALIGNCENTER );
    if( *szDesc )
       chc_TextRect( dc, szDesc, 8, HB_FALSE, 0xFF606060, pArea->x, cy + th8 + 4 + thBig, pArea->w, thDesc, GP_ALIGNCENTER, GP_ALIGNCENTER );
+   /* all the gauge, from top of the ring to the description */
+   chc_HitRect( dc, CHC_HT_GAUGE, pRegion, iSeries, 0, dValue, cx - fR, cy - fR, fR * 2, fTotal );
 }
 
 /* squarified treemap: worst aspect ratio of a row with items i0 to i1 on a side */
@@ -4634,6 +4978,7 @@ static void chc_TreemapDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_SERIES * pSe
       chc_FillRect( dc, color, pBox->x + 1, pBox->y + 1, pBox->w - 2, pBox->h - 2 );
       if( pSeries->iHatch == RMC_HATCHBRUSH_ON )
          chc_BarHatch( dc, pBox, color, iPoint );
+      chc_HitRect( dc, CHC_HT_TREEMAP, pRegion, iSeries, iPoint, pSeries->pData[ iPoint ], pBox->x, pBox->y, pBox->w, pBox->h );
 
       *szName = '\0';
       if( lOnLabels )
@@ -4721,6 +5066,7 @@ static void chc_CardDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_SERIES * pSerie
       pGdipDeleteBrush( brush );
       chc_TextRect( dc, szVar, iSmall, HB_TRUE, varColor, x0 + fA + 4, y + 4, twVar + 2, thVar, GP_ALIGNNEAR, GP_ALIGNCENTER );
    }
+   chc_HitRect( dc, CHC_HT_CARD, pRegion, ( int ) ( pSeries - pRegion->series ), 0, dValue, pArea->x, pArea->y, pArea->w, pArea->h );
 }
 
 /*
@@ -4755,6 +5101,8 @@ static void chc_FunnelDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_SERIES * pSer
          color = chc_Alpha( color, 170 );
       if( fW >= 1 )
          chc_FillRect( dc, color, x, y, fW, fBarH );
+      /* all the row, small stages too */
+      chc_HitRect( dc, CHC_HT_FUNNEL, pRegion, iSeries, n, pSeries->pData[ n ], pArea->x, y, pArea->w, fBarH );
       if( pSeries->iHatch == RMC_HATCHBRUSH_ON )
       {
          CHC_BOX box;
@@ -4834,6 +5182,7 @@ static void chc_MultiCardDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_SERIES * p
          chc_TextRect( dc, szName, 8, HB_FALSE, 0xFF606060, x + 16, fTop + thBig, fCellW - 18, thName, GP_ALIGNNEAR, GP_ALIGNCENTER );
       if( n % nRows > 0 )
          chc_Line( dc, 0xFFE0E0E0, RMC_LINESTYLESOLID, x + 6, y, x + fCellW - 6, y );
+      chc_HitRect( dc, CHC_HT_MULTICARD, pRegion, iSeries, n, pSeries->pData[ n ], x, y, fCellW, fCellH );
    }
 }
 
@@ -5115,6 +5464,8 @@ static void chc_GridlessDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_SERIES * pS
       pGdipDrawPath( dc->g, pen, path );
       pGdipDeletePen( pen );
       pGdipDeletePath( path );
+      chc_HitSlice( dc, CHC_HT_PIE, pRegion, ( int ) ( pSeries - pRegion->series ), n, pSeries->pData[ n ],
+         x, y, ell.w, ell.h, lDonut && ell.w > 0 ? inner.w / ell.w : 0, pSlice->dStart, pSlice->dSweep );
    }
 
    /* value labels */
@@ -5155,6 +5506,7 @@ static void chc_RegionDraw( CHC_DC * dc, CHC_REGION * pRegion )
    area.h = ( REAL ) chc_ResolveSize( pRegion->y, pRegion->h, pChart->h );
 
    pGdipSetClipRect( dc->g, area.x, area.y, area.w, area.h, GP_COMBINEREPLACE );
+   chc_HitRect( dc, CHC_HT_REGION, pRegion, -1, -1, 0, area.x, area.y, area.w, area.h );
    if( pRegion->lBorder )
       chc_DrawRect( dc, 0xFF808080, area.x, area.y, area.w, area.h );
    area.x += 2; area.y += 2; area.w -= 4; area.h -= 4;
@@ -5397,7 +5749,11 @@ static int chc_DrawToMemory( CHC_CHART * pChart )
    }
    if( pGdipCreateFromHDC( pChart->hMemDC, &g ) != 0 || g == NULL )
       return RMC_ERROR_CREATEBITMAP;
+   /* clickable areas only from the window bitmap, it has the size of the window */
+   pChart->nHit = 0;
+   pChart->lHitOn = HB_TRUE;
    chc_Render( pChart, g, pChart->w, pChart->h );
+   pChart->lHitOn = HB_FALSE;
    pGdipDeleteGraphics( g );
 
    return RMC_NO_ERROR;
@@ -6115,6 +6471,38 @@ HB_FUNC( RMC_DRAW )
    if( iResult == RMC_NO_ERROR && pChart->hTargetDC )
       BitBlt( pChart->hTargetDC, pChart->x, pChart->y, pChart->w, pChart->h, pChart->hMemDC, 0, 0, SRCCOPY );
    hb_retni( iResult );
+}
+
+/* CHC_SetOnClick( nCtrlId, bClick ) - bClick( hInfo ) on mouse click, NIL removes, after RMC_CreateChart() */
+HB_FUNC( CHC_SETONCLICK )
+{
+   CHC_CHART * pChart = chc_ChartGet( hb_parni( 1 ) );
+   PHB_ITEM pBlock = hb_param( 2, HB_IT_BLOCK );
+
+   if( pChart == NULL )
+   {
+      hb_retni( RMC_ERROR_CTRLID );
+      return;
+   }
+   if( pChart->pOnClick )
+   {
+      hb_itemRelease( pChart->pOnClick );
+      pChart->pOnClick = NULL;
+   }
+   if( pBlock )
+      pChart->pOnClick = hb_itemNew( pBlock );
+   hb_retni( RMC_NO_ERROR );
+}
+
+/* CHC_HitTest( nCtrlId, nX, nY ) - hash with what is on the point of the last RMC_Draw(), pixels from top left of the chart */
+HB_FUNC( CHC_HITTEST )
+{
+   CHC_CHART * pChart = chc_ChartGet( hb_parni( 1 ) );
+
+   if( pChart == NULL )
+      hb_ret();
+   else
+      hb_itemReturnRelease( chc_HitInfo( pChart, hb_parni( 2 ), hb_parni( 3 ), 0 ) );
 }
 
 /* RMC_Paint( nCtrlId ), RMC_Refresh( nCtrlId ) */

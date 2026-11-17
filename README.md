@@ -32,6 +32,7 @@ Phase 1, work in progress.
 | Printer (EMF+, EMF, BMP), clipboard (EMF and bitmap) | done |
 | XY with X/Y axes, high-low (OHLC, candlestick), volume bars, pyramid flat and 3D | done |
 | Custom objects: text and line (`RMC_COText()`, `RMC_COLine()`) | done |
+| Mouse click: `CHC_SetOnClick()` (codeblock with what was clicked, any GUI library), `CHC_HitTest()` | done |
 | Other custom objects (box, circle, image...), tooltips, zoom | next |
 | `.rmc` files: `RMC_CreateChartFromFile()`, `RMC_GetChartSizeFromFile()`, `RMC_File2Source()` (to Harbour source) (data in the file or in a `.csv`) | basic |
 
