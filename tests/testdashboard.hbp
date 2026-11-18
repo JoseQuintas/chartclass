@@ -1,0 +1,7 @@
+-I../include
+../chartclass.hbc
+fivewin.hbc
+-w3
+-es0
+
+testdashboard.prg
