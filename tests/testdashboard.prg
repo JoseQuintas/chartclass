@@ -554,7 +554,7 @@ STATIC FUNCTION Apaga( nId, nRegiao, nQtd, nCor, nEscolhido )
 
 STATIC FUNCTION TabClientes()
 
-   LOCAL aLista := Agrupa( Filtra( "CLI" ), D_CLI ), aItem
+   LOCAL aLista := Agrupa( Filtra( "CLI" ), D_CLI ), aItem, nPos
 
    ASize( s_aTop, 0 )
    FOR EACH aItem IN aLista
@@ -567,6 +567,11 @@ STATIC FUNCTION TabClientes()
       AAdd( s_aTop, { "Sem dados para o filtro.", 0, 0, 0, 0 } )
    ENDIF
    s_oBrw:GoTop()
+   /* cursor no cliente escolhido, em vez de voltar para o primeiro */
+   nPos := AScan( s_aTop, { | e | e[ 1 ] == s_hF[ "CLI" ] } )
+   DO WHILE nPos > 1 .AND. s_oBrw:nArrayAt < nPos
+      s_oBrw:GoDown()
+   ENDDO
    s_oBrw:Refresh()
 
    RETURN NIL
