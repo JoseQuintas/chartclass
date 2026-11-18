@@ -206,6 +206,15 @@ Created by `tests/testgallery.prg`, click to see the full size.
 </tr>
 </table>
 
+`tests/testdashboard.prg` (window screenshots: without filter, and after clicking on May and on Lubrificantes):
+
+<table>
+<tr>
+<td><a href="images/testdashboard.png"><img src="images/testdashboard.png" width="400" alt="testdashboard"></a></td>
+<td><a href="images/testdashboard_click.png"><img src="images/testdashboard_click.png" width="400" alt="testdashboard_click"></a></td>
+</tr>
+</table>
+
 ---
 
 RMChart is a product of its respective author. This project is independent, written from scratch, and is not affiliated with or endorsed by the RMChart author.
