@@ -58,7 +58,7 @@ STATIC s_nAltMes, s_nAltBar       // altura dos gráficos, pela altura da tela
 
 PROCEDURE Main
 
-   LOCAL oDlg, oFont, cAno, cVend := TODOS, cUf := TODOS, cGrupo := TODOS, nX, nLarg, nAltCli, nResto, nAltBrw
+   LOCAL oDlg, oFont, oBtn, cAno, cVend := TODOS, cUf := TODOS, cGrupo := TODOS, nX, nLarg, nAltCli, nResto, nAltBrw
 
    hb_cdpSelect( "PTISO" )
    SET DATE BRITISH
@@ -79,23 +79,23 @@ PROCEDURE Main
 
    nX := MARGEM
    @ 14, nX SAY "Ano" OF oDlg PIXEL SIZE 30, 20 TRANSPARENT
-   @ 10, nX + 30 COMBOBOX s_hCbx[ "ANO" ] VAR cAno ITEMS AnosTexto() OF oDlg PIXEL SIZE 70, 300 ;
-      ON CHANGE ( s_hF[ "ANO" ] := Val( cAno ), Redesenha() )
+   @ 10, nX + 30 COMBOBOX s_hCbx[ "ANO" ] VAR cAno ITEMS AnosTexto() OF oDlg PIXEL SIZE 70, 300
+   s_hCbx[ "ANO" ]:bChange := { || s_hF[ "ANO" ] := Val( cAno ), Redesenha() }
    nX += 120
    @ 14, nX SAY "Vendedor" OF oDlg PIXEL SIZE 60, 20 TRANSPARENT
-   @ 10, nX + 60 COMBOBOX s_hCbx[ "VEND" ] VAR cVend ITEMS ComTodos( s_aVend ) OF oDlg PIXEL SIZE 140, 300 ;
-      ON CHANGE ( s_hF[ "VEND" ] := iif( cVend == TODOS, "", cVend ), Redesenha() )
+   @ 10, nX + 60 COMBOBOX s_hCbx[ "VEND" ] VAR cVend ITEMS ComTodos( s_aVend ) OF oDlg PIXEL SIZE 140, 300
+   s_hCbx[ "VEND" ]:bChange := { || s_hF[ "VEND" ] := iif( cVend == TODOS, "", cVend ), Redesenha() }
    nX += 220
    @ 14, nX SAY "UF" OF oDlg PIXEL SIZE 25, 20 TRANSPARENT
-   @ 10, nX + 25 COMBOBOX s_hCbx[ "UF" ] VAR cUf ITEMS ComTodos( s_aUf ) OF oDlg PIXEL SIZE 80, 300 ;
-      ON CHANGE ( s_hF[ "UF" ] := iif( cUf == TODOS, "", cUf ), Redesenha() )
+   @ 10, nX + 25 COMBOBOX s_hCbx[ "UF" ] VAR cUf ITEMS ComTodos( s_aUf ) OF oDlg PIXEL SIZE 80, 300
+   s_hCbx[ "UF" ]:bChange := { || s_hF[ "UF" ] := iif( cUf == TODOS, "", cUf ), Redesenha() }
    nX += 125
    @ 14, nX SAY "Grupo" OF oDlg PIXEL SIZE 40, 20 TRANSPARENT
-   @ 10, nX + 40 COMBOBOX s_hCbx[ "GRUPO" ] VAR cGrupo ITEMS ComTodos( s_aGrupos ) OF oDlg PIXEL SIZE 130, 300 ;
-      ON CHANGE ( s_hF[ "GRUPO" ] := iif( cGrupo == TODOS, "", cGrupo ), Redesenha() )
+   @ 10, nX + 40 COMBOBOX s_hCbx[ "GRUPO" ] VAR cGrupo ITEMS ComTodos( s_aGrupos ) OF oDlg PIXEL SIZE 130, 300
+   s_hCbx[ "GRUPO" ]:bChange := { || s_hF[ "GRUPO" ] := iif( cGrupo == TODOS, "", cGrupo ), Redesenha() }
    nX += 190
-   @ 9, nX BUTTON "Limpar filtros" OF oDlg PIXEL SIZE 110, 26 ;
-      ACTION ( s_hF[ "MES" ] := 0, s_hF[ "VEND" ] := "", s_hF[ "UF" ] := "", s_hF[ "GRUPO" ] := "", s_hF[ "CLI" ] := "", Redesenha() )
+   @ 9, nX BUTTON oBtn PROMPT "Limpar filtros" OF oDlg PIXEL SIZE 110, 26
+   oBtn:bAction := { || s_hF[ "MES" ] := 0, s_hF[ "VEND" ] := "", s_hF[ "UF" ] := "", s_hF[ "GRUPO" ] := "", s_hF[ "CLI" ] := "", Redesenha() }
 
    @ 44, MARGEM SAY s_oSayFiltro PROMPT "" OF oDlg PIXEL SIZE LARGURA - 2 * MARGEM, 20 TRANSPARENT COLOR RGB( 18, 35, 158 ), COR_FUNDO
 
@@ -113,7 +113,8 @@ PROCEDURE Main
    s_oBrw:bLDblClick    := { || CliqueCliente() }
    s_oBrw:CreateFromCode()
 
-   ACTIVATE DIALOG oDlg CENTER ON INIT CriaGraficos( oDlg )
+   oDlg:bInit := { || CriaGraficos( oDlg ) }
+   ACTIVATE DIALOG oDlg CENTER
 
    FOR EACH nX IN hb_HValues( s_hId )
       s_oChart:DeleteChart( nX )
