@@ -5005,6 +5005,20 @@ static void chc_TreemapDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_SERIES * pSe
    hb_xfree( pOrder );
 }
 
+/* KPICARD 4th color = card background, RMC_COLOR_DEFAULT or missing = none */
+static ARGB chc_CardBack( CHC_REGION * pRegion )
+{
+   int n;
+
+   for( n = 0; n < pRegion->nSeries; n++ )
+   {
+      CHC_SERIES * pSeries = &pRegion->series[ n ];
+      if( pSeries->iKind == CHC_SER_GRIDLESS && ! pSeries->lHide && pSeries->iStyle == RMC_KPICARD )
+         return chc_GivenColor( pSeries, 3, 0 );
+   }
+   return 0;
+}
+
 /*
 RMC_KPICARD: big number, as Power BI card
 aData = { value } or { value, previous }, with previous shows the variation in percent with an arrow
@@ -5049,7 +5063,7 @@ static void chc_CardDraw( CHC_DC * dc, CHC_REGION * pRegion, CHC_SERIES * pSerie
    y += thBig;
    if( *szDesc )
    {
-      chc_TextRect( dc, szDesc, iSmall, HB_FALSE, 0xFF606060, pArea->x, y, pArea->w, thDesc, GP_ALIGNCENTER, GP_ALIGNCENTER );
+      chc_TextRect( dc, szDesc, iSmall, HB_FALSE, chc_GivenColor( pSeries, 3, 0 ) ? 0xFFFFFFFF : 0xFF606060, pArea->x, y, pArea->w, thDesc, GP_ALIGNCENTER, GP_ALIGNCENTER );
       y += thDesc;
    }
    if( lVar )
@@ -5507,6 +5521,8 @@ static void chc_RegionDraw( CHC_DC * dc, CHC_REGION * pRegion )
 
    pGdipSetClipRect( dc->g, area.x, area.y, area.w, area.h, GP_COMBINEREPLACE );
    chc_HitRect( dc, CHC_HT_REGION, pRegion, -1, -1, 0, area.x, area.y, area.w, area.h );
+   if( chc_CardBack( pRegion ) )
+      chc_FillRect( dc, chc_CardBack( pRegion ), area.x, area.y, area.w, area.h );
    if( pRegion->lBorder )
       chc_DrawRect( dc, 0xFF808080, area.x, area.y, area.w, area.h );
    area.x += 2; area.y += 2; area.w -= 4; area.h -= 4;

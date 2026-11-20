@@ -308,7 +308,7 @@ ze_chartclass.ch - constants for chartclass, same names and values of the RMC_* 
 #define RMC_PYRAMIDE_3PARTS              62   /* chartclass: 2D with 3 parts */
 #define RMC_GAUGE                        63   /* chartclass: half circle, { value } or { value, limit1, ..., max } */
 #define RMC_TREEMAP                      64   /* chartclass: one rectangle by value, area by value */
-#define RMC_KPICARD                      65   /* chartclass: big value, { value } or { value, previous } */
+#define RMC_KPICARD                      65   /* chartclass: big value, { value } or { value, previous }, colors { value, up, down, background } */
 #define RMC_FUNNEL                       80   /* chartclass: horizontal bars by stage, centered */
 #define RMC_MULTICARD                    81   /* chartclass: several values with names */
 
